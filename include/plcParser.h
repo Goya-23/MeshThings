@@ -6,13 +6,11 @@
 class PLCParser
 {
 public:
-    PLCParser(char* path);
+    PLCParser() {}
     ~PLCParser() {}
     std::shared_ptr<PLC2D> parse(char* path);
-private:
-    std::shared_ptr<PLC2D> plc;
 
-}
+};
 
 
 

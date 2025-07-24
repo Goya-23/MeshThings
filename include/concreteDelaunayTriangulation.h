@@ -2,10 +2,11 @@
 #define _CONCRETE_DELAUNAY_TRIANGULATION_H_
 #include <memory>
 #include "plc.h"
+#include "delaunayTriangulation.h"
 
 
 
-class IncrementalDelaunayTriangulation
+class IncrementalDelaunayTriangulation : public DelaunayTriangulation
 {
 public:
     IncrementalDelaunayTriangulation() {}
@@ -19,7 +20,7 @@ public:
 
 
 
-class SweepLineDelaunayTriangulation
+class SweepLineDelaunayTriangulation : public DelaunayTriangulation
 {
 public:
     SweepLineDelaunayTriangulation() {}

@@ -18,7 +18,7 @@ private:
     std::vector<Polygon> m_polygons;
     std::vector<Point2D> m_holes;
 
-}
+};
 
 
 

@@ -11,7 +11,7 @@ public:
     DelaunayTriangulation() {}
     virtual ~DelaunayTriangulation() {}
     
-    void triangulate(std::shared_ptr<PLC2D> plc) = 0;
+    virtual void triangulate(std::shared_ptr<PLC2D> plc) = 0;
 
 
 

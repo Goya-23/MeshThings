@@ -2,6 +2,7 @@
 #define _DELAUNAY_TRIANGULATION_FACTORY_H_
 
 #include <memory>
+#include <iostream>
 #include "delaunayTriangulation.h"
 
 class DelaunayTriangulationFactory
@@ -13,8 +14,6 @@ public:
     std::shared_ptr<DelaunayTriangulation> produce(char s);
 
 
-private:
-    std::shared_ptr<DelaunayTriangulation> m_dt;
 };
 
 

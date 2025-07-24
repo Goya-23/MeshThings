@@ -1,5 +1,5 @@
 #include "delaunayTriangulationFactory.h"
-#include "concreteDelaunauTriangulation.h"
+#include "concreteDelaunayTriangulation.h"
 
 
 std::shared_ptr<DelaunayTriangulation>
