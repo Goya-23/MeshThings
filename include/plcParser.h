@@ -3,15 +3,12 @@
 #include <memory>
 #include "plc.h"
 
-class PLCParser
-{
+class PLCParser {
 public:
     PLCParser() {}
     ~PLCParser() {}
-    std::shared_ptr<PLC2D> parse(char* path);
-
+    std::shared_ptr<PLC2D> parse(const char* path);
+    std::shared_ptr<PLC2D> makeUnitSquare();
 };
 
-
-
-#endif // _PLC_PARSER_H_ 
+#endif // _PLC_PARSER_H_
