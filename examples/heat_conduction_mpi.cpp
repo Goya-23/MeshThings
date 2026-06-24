@@ -15,42 +15,65 @@
 #include "meshPartitioner.h"
 #include "openVolumeMeshAdapter.h"
 #include "plcParser.h"
+#include "wedgeMesh.h"
 
 namespace {
 
 double computeL2Error(
-    const Triangulation2D& mesh,
+    const WedgeMesh3D& mesh,
     const std::vector<double>& global_solution,
     int rank) {
     double local_error = 0.0;
-    double local_area = 0.0;
+    double local_volume = 0.0;
 
-    for (const auto& triangle : mesh.triangles) {
-        const auto& p0 = mesh.vertices[triangle[0]];
-        const auto& p1 = mesh.vertices[triangle[1]];
-        const auto& p2 = mesh.vertices[triangle[2]];
-        const double area2 = std::abs((p1.x_ - p0.x_) * (p2.y_ - p0.y_) - (p2.x_ - p0.x_) * (p1.y_ - p0.y_));
-        const double area = 0.5 * area2;
+    const std::array<std::array<int, 4>, 3> tetrahedra = {{
+        {{0, 1, 2, 5}},
+        {{0, 1, 5, 3}},
+        {{1, 4, 5, 3}},
+    }};
 
-        const double u0 = global_solution[triangle[0]];
-        const double u1 = global_solution[triangle[1]];
-        const double u2 = global_solution[triangle[2]];
-        const double approx = (u0 + u1 + u2) / 3.0;
+    for (const auto& wedge : mesh.wedges) {
+        for (const auto& local_tet : tetrahedra) {
+            std::array<int, 4> tet = {
+                wedge[local_tet[0]],
+                wedge[local_tet[1]],
+                wedge[local_tet[2]],
+                wedge[local_tet[3]],
+            };
 
-        const double x = (p0.x_ + p1.x_ + p2.x_) / 3.0;
-        const double y = (p0.y_ + p1.y_ + p2.y_) / 3.0;
-        const double exact = std::sin(M_PI * x) * std::sin(M_PI * y);
-        const double diff = approx - exact;
-        local_error += diff * diff * area;
-        local_area += area;
+            const auto& p0 = mesh.vertices[tet[0]];
+            const auto& p1 = mesh.vertices[tet[1]];
+            const auto& p2 = mesh.vertices[tet[2]];
+            const auto& p3 = mesh.vertices[tet[3]];
+
+            const double v6 =
+                (p1.x_ - p0.x_) * ((p2.y_ - p0.y_) * (p3.z_ - p0.z_) - (p2.z_ - p0.z_) * (p3.y_ - p0.y_)) -
+                (p1.y_ - p0.y_) * ((p2.x_ - p0.x_) * (p3.z_ - p0.z_) - (p2.z_ - p0.z_) * (p3.x_ - p0.x_)) +
+                (p1.z_ - p0.z_) * ((p2.x_ - p0.x_) * (p3.y_ - p0.y_) - (p2.y_ - p0.y_) * (p3.x_ - p0.x_));
+            const double volume = std::abs(v6) / 6.0;
+
+            const double u0 = global_solution[tet[0]];
+            const double u1 = global_solution[tet[1]];
+            const double u2 = global_solution[tet[2]];
+            const double u3 = global_solution[tet[3]];
+            const double approx = 0.25 * (u0 + u1 + u2 + u3);
+
+            const double x = 0.25 * (p0.x_ + p1.x_ + p2.x_ + p3.x_);
+            const double y = 0.25 * (p0.y_ + p1.y_ + p2.y_ + p3.y_);
+            const double z = 0.25 * (p0.z_ + p1.z_ + p2.z_ + p3.z_);
+            const double exact = std::sin(M_PI * x) * std::sin(M_PI * y) * std::sin(M_PI * z);
+            const double diff = approx - exact;
+            local_error += diff * diff * volume;
+            local_volume += volume;
+        }
     }
 
     double global_error = 0.0;
-    double global_area = 0.0;
+    double global_volume = 0.0;
     MPI_Allreduce(&local_error, &global_error, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&local_area, &global_area, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_volume, &global_volume, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     if (rank == 0) {
-        return std::sqrt(global_error / global_area);
+        return std::sqrt(global_error / global_volume);
     }
     return 0.0;
 }
@@ -65,8 +88,11 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    int nx = 12;
-    int ny = 12;
+    int nx = 8;
+    int ny = 8;
+    int nz = 4;
+    double height = 1.0;
+    double conductivity = 1.0;
     char method = 'i';
     const char* plc_path = nullptr;
 
@@ -80,12 +106,24 @@ int main(int argc, char** argv) {
         nx = std::stoi(argv[3]);
         ny = std::stoi(argv[4]);
     }
+    if (argc >= 6) {
+        nz = std::stoi(argv[5]);
+    }
+    if (argc >= 7) {
+        height = std::stod(argv[6]);
+    }
+    if (argc >= 8) {
+        conductivity = std::stod(argv[7]);
+    }
 
     try {
         HYPRE_Init();
 
         PLCParser parser;
         std::shared_ptr<PLC2D> plc = plc_path ? parser.parse(plc_path) : parser.makeUnitSquare();
+        if (argc < 7) {
+            height = plc->getExtrusionHeight();
+        }
 
         auto factory = std::make_shared<DelaunayTriangulationFactory>();
         std::shared_ptr<DelaunayTriangulation> triangulator = factory->produce(method);
@@ -100,10 +138,12 @@ int main(int argc, char** argv) {
         }
 
         triangulator->triangulate(plc);
-        const Triangulation2D& triangulation = triangulator->result();
+        const Triangulation2D& footprint = triangulator->result();
+        WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity);
 
-        SurfaceMesh2D surface_mesh = OpenVolumeMeshAdapter::buildSurfaceMesh(triangulation);
-        Triangulation2D mesh_from_ovm = OpenVolumeMeshAdapter::extractTriangulation(surface_mesh);
+        VolumeMesh3D volume_mesh = OpenVolumeMeshAdapter::buildWedgeVolumeMesh(wedge_mesh);
+        WedgeMesh3D mesh_from_ovm =
+            OpenVolumeMeshAdapter::extractWedgeMesh(volume_mesh, wedge_mesh.conductivity);
 
         MeshPartition partition;
         if (rank == 0) {
@@ -111,21 +151,25 @@ int main(int argc, char** argv) {
         }
 
         const int vertex_count = static_cast<int>(mesh_from_ovm.vertexCount());
-        const int triangle_count = static_cast<int>(mesh_from_ovm.triangleCount());
+        const int wedge_count = static_cast<int>(mesh_from_ovm.wedgeCount());
         MPI_Bcast(&partition.num_parts, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
         if (rank != 0) {
-            partition.element_part.resize(triangle_count);
+            partition.element_part.resize(wedge_count);
             partition.vertex_part.resize(vertex_count);
         }
-        MPI_Bcast(partition.element_part.data(), triangle_count, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(partition.element_part.data(), wedge_count, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Bcast(partition.vertex_part.data(), vertex_count, MPI_INT, 0, MPI_COMM_WORLD);
 
         if (rank == 0) {
-            std::cout << "Mesh: " << mesh_from_ovm.vertexCount() << " vertices, "
-                      << mesh_from_ovm.triangleCount() << " triangles\n";
-            std::cout << "OpenVolumeMesh faces: " << surface_mesh.n_faces()
-                      << ", vertices: " << surface_mesh.n_vertices() << "\n";
+            std::cout << "Footprint CDT: " << footprint.vertexCount() << " vertices, "
+                      << footprint.triangleCount() << " triangles\n";
+            std::cout << "Wedge mesh: " << mesh_from_ovm.vertexCount() << " vertices, "
+                      << mesh_from_ovm.wedgeCount() << " wedge cells\n";
+            std::cout << "OpenVolumeMesh cells: " << volume_mesh.n_cells()
+                      << ", faces: " << volume_mesh.n_faces()
+                      << ", vertices: " << volume_mesh.n_vertices() << "\n";
+            std::cout << "Material conductivity k = " << mesh_from_ovm.conductivity << "\n";
             std::cout << "METIS nodal partition into " << partition.num_parts << " parts\n";
         }
 

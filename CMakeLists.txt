@@ -29,6 +29,7 @@ add_library(meshthings_core STATIC
     src/concreteDelaunayTriangulation.cpp
     src/delaunayTriangulationFactory.cpp
     src/constrainedDelaunay.cpp
+    src/wedgeExtruder.cpp
     src/openVolumeMeshAdapter.cpp
     src/meshPartitioner.cpp
     src/heatFEM.cpp

@@ -1,6 +1,7 @@
 #include "heatFEM.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -9,93 +10,136 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
-bool isOnSegment(const Point2D& p, const Point2D& a, const Point2D& b) {
-    const double cross = (b.x_ - a.x_) * (p.y_ - a.y_) - (b.y_ - a.y_) * (p.x_ - a.x_);
-    if (std::abs(cross) > 1.0e-10) {
-        return false;
-    }
-    const double dot = (p.x_ - a.x_) * (p.x_ - b.x_) + (p.y_ - a.y_) * (p.y_ - b.y_);
-    return dot <= 1.0e-10;
+struct Vec3 {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
+Vec3 operator-(const Vec3& a, const Vec3& b) {
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+Vec3 cross(const Vec3& a, const Vec3& b) {
+    return {
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x,
+    };
+}
+
+Vec3 operator/(const Vec3& vector, double scalar) {
+    return {vector.x / scalar, vector.y / scalar, vector.z / scalar};
+}
+
+double dot(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vec3 toVec3(const Point3D& point) {
+    return {point.x_, point.y_, point.z_};
 }
 
 }  // namespace
 
-double HeatFEMAssembler::exactSolution(double x, double y) {
-    return std::sin(kPi * x) * std::sin(kPi * y);
+double HeatFEMAssembler::exactSolution(double x, double y, double z) {
+    return std::sin(kPi * x) * std::sin(kPi * y) * std::sin(kPi * z);
 }
 
-double HeatFEMAssembler::sourceTerm(double x, double y) {
-    return 2.0 * kPi * kPi * std::sin(kPi * x) * std::sin(kPi * y);
+double HeatFEMAssembler::sourceTerm(double x, double y, double z) {
+    return 3.0 * kPi * kPi * std::sin(kPi * x) * std::sin(kPi * y) * std::sin(kPi * z);
 }
 
-bool HeatFEMAssembler::isBoundaryVertex(const Triangulation2D& mesh, int vertex_id) {
-    const Point2D& point = mesh.vertices[vertex_id];
+bool HeatFEMAssembler::isBoundaryVertex(const WedgeMesh3D& mesh, int vertex_id) {
+    const Point3D& point = mesh.vertices[vertex_id];
     const double tol = 1.0e-8;
-    const auto onBoundary = [&](double value, double min_value, double max_value) {
-        return std::abs(value - min_value) < tol || std::abs(value - max_value) < tol;
-    };
 
     double xmin = mesh.vertices.front().x_;
     double xmax = mesh.vertices.front().x_;
     double ymin = mesh.vertices.front().y_;
     double ymax = mesh.vertices.front().y_;
+    double zmin = mesh.vertices.front().z_;
+    double zmax = mesh.vertices.front().z_;
     for (const auto& vertex : mesh.vertices) {
         xmin = std::min(xmin, vertex.x_);
         xmax = std::max(xmax, vertex.x_);
         ymin = std::min(ymin, vertex.y_);
         ymax = std::max(ymax, vertex.y_);
+        zmin = std::min(zmin, vertex.z_);
+        zmax = std::max(zmax, vertex.z_);
     }
 
-    return onBoundary(point.x_, xmin, xmax) || onBoundary(point.y_, ymin, ymax);
+    const auto onBoundary = [&](double value, double min_value, double max_value) {
+        return std::abs(value - min_value) < tol || std::abs(value - max_value) < tol;
+    };
+
+    return onBoundary(point.x_, xmin, xmax) || onBoundary(point.y_, ymin, ymax) ||
+           onBoundary(point.z_, zmin, zmax);
 }
 
-void HeatFEMAssembler::addTriangleContribution(
-    const Triangulation2D& mesh,
-    const std::array<int, 3>& tri,
+void HeatFEMAssembler::addTetrahedronContribution(
+    const WedgeMesh3D& mesh,
+    const std::array<int, 4>& tet,
     double conductivity,
     std::map<int, std::map<int, double>>& matrix,
     std::map<int, double>& rhs) {
-    const Point2D& p0 = mesh.vertices[tri[0]];
-    const Point2D& p1 = mesh.vertices[tri[1]];
-    const Point2D& p2 = mesh.vertices[tri[2]];
+    const Vec3 p[4] = {
+        toVec3(mesh.vertices[tet[0]]),
+        toVec3(mesh.vertices[tet[1]]),
+        toVec3(mesh.vertices[tet[2]]),
+        toVec3(mesh.vertices[tet[3]]),
+    };
 
-    const double area2 = std::abs((p1.x_ - p0.x_) * (p2.y_ - p0.y_) - (p2.x_ - p0.x_) * (p1.y_ - p0.y_));
-    if (area2 < 1.0e-14) {
+    const double volume6 = dot(p[1] - p[0], cross(p[2] - p[0], p[3] - p[0]));
+    if (std::abs(volume6) < 1.0e-14) {
         return;
     }
-    const double area = 0.5 * area2;
+    const double volume = volume6 / 6.0;
 
-    const double b0 = p1.y_ - p2.y_;
-    const double b1 = p2.y_ - p0.y_;
-    const double b2 = p0.y_ - p1.y_;
-    const double c0 = p2.x_ - p1.x_;
-    const double c1 = p0.x_ - p2.x_;
-    const double c2 = p1.x_ - p0.x_;
+    const Vec3 grad[4] = {
+        cross(p[2] - p[1], p[3] - p[1]) / volume6,
+        cross(p[3] - p[0], p[2] - p[0]) / volume6,
+        cross(p[1] - p[0], p[3] - p[0]) / volume6,
+        cross(p[1] - p[0], p[2] - p[0]) / volume6,
+    };
 
-    const double factor = conductivity / area;
-    const int ids[3] = {tri[0], tri[1], tri[2]};
-    const double b[3] = {b0, b1, b2};
-    const double c[3] = {c0, c1, c2};
-
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            matrix[ids[i]][ids[j]] += factor * (b[i] * b[j] + c[i] * c[j]);
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            matrix[tet[i]][tet[j]] += conductivity * volume * dot(grad[i], grad[j]);
         }
     }
 
-    const double centroid_x = (p0.x_ + p1.x_ + p2.x_) / 3.0;
-    const double centroid_y = (p0.y_ + p1.y_ + p2.y_) / 3.0;
-    const double load = sourceTerm(centroid_x, centroid_y) * area / 3.0;
-    for (int i = 0; i < 3; ++i) {
-        rhs[ids[i]] += load;
+    const Vec3 centroid = {
+        0.25 * (p[0].x + p[1].x + p[2].x + p[3].x),
+        0.25 * (p[0].y + p[1].y + p[2].y + p[3].y),
+        0.25 * (p[0].z + p[1].z + p[2].z + p[3].z),
+    };
+    const double load = sourceTerm(centroid.x, centroid.y, centroid.z) * volume / 4.0;
+    for (int i = 0; i < 4; ++i) {
+        rhs[tet[i]] += load;
+    }
+}
+
+void HeatFEMAssembler::addWedgeContribution(
+    const WedgeMesh3D& mesh,
+    const std::array<int, 6>& wedge,
+    std::map<int, std::map<int, double>>& matrix,
+    std::map<int, double>& rhs) {
+    const std::array<std::array<int, 4>, 3> tetrahedra = {{
+        {{wedge[0], wedge[1], wedge[2], wedge[5]}},
+        {{wedge[0], wedge[1], wedge[5], wedge[3]}},
+        {{wedge[1], wedge[4], wedge[5], wedge[3]}},
+    }};
+
+    for (const auto& tet : tetrahedra) {
+        addTetrahedronContribution(mesh, tet, mesh.conductivity, matrix, rhs);
     }
 }
 
 LocalLinearSystem HeatFEMAssembler::assemble(
     MPI_Comm comm,
-    const Triangulation2D& mesh,
-    const MeshPartition& partition,
-    double conductivity) {
+    const WedgeMesh3D& mesh,
+    const MeshPartition& partition) {
     int rank = 0;
     int size = 1;
     MPI_Comm_rank(comm, &rank);
@@ -136,11 +180,10 @@ LocalLinearSystem HeatFEMAssembler::assemble(
     }
 
     std::set<int> touched_vertices(system.owned_vertices.begin(), system.owned_vertices.end());
-    for (std::size_t element = 0; element < mesh.triangleCount(); ++element) {
-        const auto& tri = mesh.triangles[element];
+    for (const auto& wedge : mesh.wedges) {
         bool touches_owned = false;
-        for (int corner = 0; corner < 3; ++corner) {
-            if (partition.vertex_part[tri[corner]] == rank) {
+        for (int corner = 0; corner < 6; ++corner) {
+            if (partition.vertex_part[wedge[corner]] == rank) {
                 touches_owned = true;
                 break;
             }
@@ -148,8 +191,8 @@ LocalLinearSystem HeatFEMAssembler::assemble(
         if (!touches_owned) {
             continue;
         }
-        for (int corner = 0; corner < 3; ++corner) {
-            touched_vertices.insert(tri[corner]);
+        for (int corner = 0; corner < 6; ++corner) {
+            touched_vertices.insert(wedge[corner]);
         }
     }
 
@@ -160,8 +203,8 @@ LocalLinearSystem HeatFEMAssembler::assemble(
 
     std::map<int, std::map<int, double>> global_matrix;
     std::map<int, double> global_rhs;
-    for (const auto& triangle : mesh.triangles) {
-        addTriangleContribution(mesh, triangle, conductivity, global_matrix, global_rhs);
+    for (const auto& wedge : mesh.wedges) {
+        addWedgeContribution(mesh, wedge, global_matrix, global_rhs);
     }
 
     system.is_dirichlet.assign(system.local_to_global.size(), 0);
@@ -185,18 +228,19 @@ LocalLinearSystem HeatFEMAssembler::assemble(
 
     for (int local_row = 0; local_row < local_rows; ++local_row) {
         const int global_row = system.owned_vertices[local_row];
+        const Point3D& point = mesh.vertices[global_row];
         if (system.is_dirichlet[system.global_to_local[global_row]]) {
             rows[local_row].push_back({global_row, 1.0});
-            system.rhs[local_row] = exactSolution(mesh.vertices[global_row].x_, mesh.vertices[global_row].y_);
+            system.rhs[local_row] = exactSolution(point.x_, point.y_, point.z_);
             continue;
         }
 
         for (const auto& column_entry : global_matrix[global_row]) {
             const int global_col = column_entry.first;
             const double value = column_entry.second;
+            const Point3D& col_point = mesh.vertices[global_col];
             if (isBoundaryVertex(mesh, global_col)) {
-                system.rhs[local_row] -= value * exactSolution(
-                    mesh.vertices[global_col].x_, mesh.vertices[global_col].y_);
+                system.rhs[local_row] -= value * exactSolution(col_point.x_, col_point.y_, col_point.z_);
             } else {
                 rows[local_row].push_back({global_col, value});
             }

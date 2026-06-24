@@ -1,13 +1,14 @@
 #ifndef _HEAT_FEM_H_
 #define _HEAT_FEM_H_
 
+#include <array>
 #include <map>
 #include <vector>
 
 #include <mpi.h>
 
 #include "meshPartitioner.h"
-#include "triangulation2d.h"
+#include "wedgeMesh.h"
 
 struct LocalLinearSystem {
     int global_size = 0;
@@ -27,19 +28,24 @@ struct LocalLinearSystem {
 
 class HeatFEMAssembler {
 public:
-  static LocalLinearSystem assemble(
-      MPI_Comm comm,
-      const Triangulation2D& mesh,
-      const MeshPartition& partition,
-      double conductivity = 1.0);
+    static LocalLinearSystem assemble(
+        MPI_Comm comm,
+        const WedgeMesh3D& mesh,
+        const MeshPartition& partition);
+
+    static bool isBoundaryVertex(const WedgeMesh3D& mesh, int vertex_id);
 
 private:
-    static double exactSolution(double x, double y);
-    static double sourceTerm(double x, double y);
-    static bool isBoundaryVertex(const Triangulation2D& mesh, int vertex_id);
-    static void addTriangleContribution(
-        const Triangulation2D& mesh,
-        const std::array<int, 3>& tri,
+    static double exactSolution(double x, double y, double z);
+    static double sourceTerm(double x, double y, double z);
+    static void addWedgeContribution(
+        const WedgeMesh3D& mesh,
+        const std::array<int, 6>& wedge,
+        std::map<int, std::map<int, double>>& matrix,
+        std::map<int, double>& rhs);
+    static void addTetrahedronContribution(
+        const WedgeMesh3D& mesh,
+        const std::array<int, 4>& tet,
         double conductivity,
         std::map<int, std::map<int, double>>& matrix,
         std::map<int, double>& rhs);
