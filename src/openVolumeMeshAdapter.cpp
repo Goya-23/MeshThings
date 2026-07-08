@@ -167,9 +167,16 @@ VolumeMesh3D OpenVolumeMeshAdapter::buildWedgeVolumeMesh(const WedgeMesh3D& wedg
     return mesh;
 }
 
-WedgeMesh3D OpenVolumeMeshAdapter::extractWedgeMesh(const VolumeMesh3D& mesh, double conductivity) {
+WedgeMesh3D OpenVolumeMeshAdapter::extractWedgeMesh(
+    const VolumeMesh3D& mesh,
+    double conductivity,
+    const std::vector<double>& wedge_conductivity,
+    const std::vector<int>& wedge_material_id,
+    const std::vector<std::string>& material_names,
+    const std::vector<char>& boundary_vertices) {
     WedgeMesh3D wedge_mesh;
     wedge_mesh.conductivity = conductivity;
+    wedge_mesh.material_names = material_names;
     wedge_mesh.vertices.reserve(mesh.n_vertices());
     for (OpenVolumeMesh::VertexIter vertex_it = mesh.vertices_begin();
          vertex_it != mesh.vertices_end();
@@ -177,7 +184,11 @@ WedgeMesh3D OpenVolumeMeshAdapter::extractWedgeMesh(const VolumeMesh3D& mesh, do
         const auto position = mesh.vertex(*vertex_it);
         wedge_mesh.vertices.emplace_back(position[0], position[1], position[2]);
     }
+    if (boundary_vertices.size() == wedge_mesh.vertices.size()) {
+        wedge_mesh.boundary_vertices = boundary_vertices;
+    }
 
+    std::size_t source_cell_id = 0;
     for (OpenVolumeMesh::CellIter cell_it = mesh.cells_begin(); cell_it != mesh.cells_end(); ++cell_it) {
         std::vector<int> cell_vertices;
         for (OpenVolumeMesh::CellVertexIter cv_it = mesh.cv_iter(*cell_it); cv_it.valid(); ++cv_it) {
@@ -235,10 +246,23 @@ WedgeMesh3D OpenVolumeMeshAdapter::extractWedgeMesh(const VolumeMesh3D& mesh, do
             std::swap(wedge[4], wedge[5]);
         }
         wedge_mesh.wedges.push_back(wedge);
+        if (source_cell_id < wedge_conductivity.size()) {
+            wedge_mesh.wedge_conductivity.push_back(wedge_conductivity[source_cell_id]);
+        }
+        if (source_cell_id < wedge_material_id.size()) {
+            wedge_mesh.wedge_material_id.push_back(wedge_material_id[source_cell_id]);
+        }
+        ++source_cell_id;
     }
 
     if (wedge_mesh.wedgeCount() == 0) {
         throw std::runtime_error("OpenVolumeMesh volume does not contain wedge cells");
+    }
+    if (wedge_mesh.wedge_conductivity.size() != wedge_mesh.wedgeCount()) {
+        wedge_mesh.wedge_conductivity.assign(wedge_mesh.wedgeCount(), conductivity);
+    }
+    if (wedge_mesh.wedge_material_id.size() != wedge_mesh.wedgeCount()) {
+        wedge_mesh.wedge_material_id.assign(wedge_mesh.wedgeCount(), 0);
     }
     return wedge_mesh;
 }

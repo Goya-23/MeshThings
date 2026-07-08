@@ -2,6 +2,7 @@
 #define _HEAT_FEM_H_
 
 #include <array>
+#include <cstddef>
 #include <map>
 #include <vector>
 
@@ -40,6 +41,7 @@ private:
     static double sourceTerm(double x, double y, double z);
     static void addWedgeContribution(
         const WedgeMesh3D& mesh,
+        std::size_t wedge_id,
         const std::array<int, 6>& wedge,
         std::map<int, std::map<int, double>>& matrix,
         std::map<int, double>& rhs);
