@@ -43,6 +43,36 @@ bool pointInTriangle(const Point2D& p, const Point2D& a, const Point2D& b, const
     return !(has_neg && has_pos);
 }
 
+bool pointOnSegment(const Point2D& point, const Point2D& a, const Point2D& b) {
+    if (std::abs(cross2d(a, b, point)) > kEpsilon) {
+        return false;
+    }
+    return point.x_ >= std::min(a.x_, b.x_) - kEpsilon &&
+           point.x_ <= std::max(a.x_, b.x_) + kEpsilon &&
+           point.y_ >= std::min(a.y_, b.y_) - kEpsilon &&
+           point.y_ <= std::max(a.y_, b.y_) + kEpsilon;
+}
+
+bool pointInPolygon(const Point2D& point, const std::vector<Point2D>& polygon) {
+    bool inside = false;
+    for (std::size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++) {
+        const Point2D& a = polygon[i];
+        const Point2D& b = polygon[j];
+        if (pointOnSegment(point, a, b)) {
+            return true;
+        }
+        const bool edge_crosses_ray = (a.y_ > point.y_) != (b.y_ > point.y_);
+        if (edge_crosses_ray) {
+            const double x_intersection =
+                (b.x_ - a.x_) * (point.y_ - a.y_) / (b.y_ - a.y_) + a.x_;
+            if (point.x_ < x_intersection) {
+                inside = !inside;
+            }
+        }
+    }
+    return inside;
+}
+
 bool isAxisAlignedRectangle(const PLC2D& plc) {
     if (plc.getPolygons().empty()) {
         return false;
@@ -106,6 +136,16 @@ void triangulateStructuredRectangle(int nx, int ny, Triangulation2D& mesh) {
             mesh.triangles.push_back({v00, v10, v11});
             mesh.triangles.push_back({v00, v11, v01});
         }
+    }
+
+    mesh.constrained_edges.clear();
+    for (int i = 0; i < nx; ++i) {
+        mesh.constrained_edges.emplace_back(vertex_index(i, 0), vertex_index(i + 1, 0));
+        mesh.constrained_edges.emplace_back(vertex_index(i, ny), vertex_index(i + 1, ny));
+    }
+    for (int j = 0; j < ny; ++j) {
+        mesh.constrained_edges.emplace_back(vertex_index(0, j), vertex_index(0, j + 1));
+        mesh.constrained_edges.emplace_back(vertex_index(nx, j), vertex_index(nx, j + 1));
     }
 }
 
@@ -428,25 +468,27 @@ void ConstrainedDelaunayTriangulator::removeExteriorTriangles(const PLC2D& plc, 
         return;
     }
 
-    Point2D seed(0.0, 0.0);
-    for (const auto& point : boundary) {
-        seed.x_ += point.x_;
-        seed.y_ += point.y_;
-    }
-    seed.x_ /= static_cast<double>(boundary.size());
-    seed.y_ /= static_cast<double>(boundary.size());
-
-    if (!plc.getHoles().empty()) {
-        seed = plc.getHoles().front();
-    }
-
     std::vector<char> keep(mesh.triangles.size(), 0);
     for (std::size_t ti = 0; ti < mesh.triangles.size(); ++ti) {
         const auto& tri = mesh.triangles[ti];
         const auto& a = mesh.vertices[tri[0]];
         const auto& b = mesh.vertices[tri[1]];
         const auto& c = mesh.vertices[tri[2]];
-        if (pointInTriangle(seed, a, b, c)) {
+        const Point2D centroid(
+            (a.x_ + b.x_ + c.x_) / 3.0,
+            (a.y_ + b.y_ + c.y_) / 3.0);
+        if (!pointInPolygon(centroid, boundary)) {
+            continue;
+        }
+
+        bool contains_hole_seed = false;
+        for (const auto& hole : plc.getHoles()) {
+            if (pointInTriangle(hole, a, b, c)) {
+                contains_hole_seed = true;
+                break;
+            }
+        }
+        if (!contains_hole_seed) {
             keep[ti] = 1;
         }
     }

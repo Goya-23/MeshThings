@@ -221,9 +221,16 @@ WedgeMesh3D MeshPartitioner::reorderByPartition(WedgeMesh3D mesh, MeshPartition&
 
     WedgeMesh3D reordered;
     reordered.conductivity = mesh.conductivity;
+    reordered.wedge_conductivity = mesh.wedge_conductivity;
+    reordered.wedge_material_id = mesh.wedge_material_id;
+    reordered.material_names = mesh.material_names;
     reordered.vertices.resize(mesh.vertices.size());
+    reordered.boundary_vertices.resize(mesh.boundary_vertices.size());
     for (int old_index = 0; old_index < vertex_count; ++old_index) {
         reordered.vertices[old_to_new[old_index]] = mesh.vertices[old_index];
+        if (old_index < static_cast<int>(mesh.boundary_vertices.size())) {
+            reordered.boundary_vertices[old_to_new[old_index]] = mesh.boundary_vertices[old_index];
+        }
     }
 
     reordered.wedges.reserve(mesh.wedges.size());

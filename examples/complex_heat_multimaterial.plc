@@ -1,0 +1,35 @@
+# Larger non-rectangular 2D footprint extruded into z, with material boxes.
+# Format:
+#   boundary vertex count
+#   x y
+#   ...
+#   hole seed count
+#   x y
+#   ...
+#   extrusion height
+#   default conductivity
+#   material region count
+#   name conductivity xmin xmax ymin ymax zmin zmax
+13
+0.00 0.00
+2.80 0.00
+3.25 0.45
+3.05 1.10
+3.55 1.70
+2.70 2.45
+1.95 2.25
+1.45 2.90
+0.70 2.55
+0.40 1.85
+-0.25 1.55
+0.10 0.95
+-0.15 0.45
+0
+1.60
+4.0
+5
+copper_core 385.0 0.55 1.55 0.45 1.45 0.00 1.60
+ceramic_cap 24.0 1.45 2.75 1.05 2.20 0.00 1.60
+insulation_band 0.08 -0.20 0.55 0.40 1.90 0.00 1.60
+graphite_midplane 130.0 0.85 2.45 0.65 1.85 0.60 1.05
+aluminum_lip 205.0 2.20 3.55 0.20 1.45 0.00 0.80

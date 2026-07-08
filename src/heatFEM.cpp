@@ -51,6 +51,10 @@ double HeatFEMAssembler::sourceTerm(double x, double y, double z) {
 }
 
 bool HeatFEMAssembler::isBoundaryVertex(const WedgeMesh3D& mesh, int vertex_id) {
+    if (vertex_id >= 0 && vertex_id < static_cast<int>(mesh.boundary_vertices.size())) {
+        return mesh.boundary_vertices[vertex_id] != 0;
+    }
+
     const Point3D& point = mesh.vertices[vertex_id];
     const double tol = 1.0e-8;
 
@@ -114,7 +118,7 @@ void HeatFEMAssembler::addTetrahedronContribution(
         0.25 * (p[0].y + p[1].y + p[2].y + p[3].y),
         0.25 * (p[0].z + p[1].z + p[2].z + p[3].z),
     };
-    const double load = sourceTerm(centroid.x, centroid.y, centroid.z) * volume / 4.0;
+    const double load = conductivity * sourceTerm(centroid.x, centroid.y, centroid.z) * volume / 4.0;
     for (int i = 0; i < 4; ++i) {
         rhs[tet[i]] += load;
     }
@@ -122,6 +126,7 @@ void HeatFEMAssembler::addTetrahedronContribution(
 
 void HeatFEMAssembler::addWedgeContribution(
     const WedgeMesh3D& mesh,
+    std::size_t wedge_id,
     const std::array<int, 6>& wedge,
     std::map<int, std::map<int, double>>& matrix,
     std::map<int, double>& rhs) {
@@ -131,8 +136,9 @@ void HeatFEMAssembler::addWedgeContribution(
         {{wedge[1], wedge[4], wedge[5], wedge[3]}},
     }};
 
+    const double conductivity = mesh.conductivityForWedge(wedge_id);
     for (const auto& tet : tetrahedra) {
-        addTetrahedronContribution(mesh, tet, mesh.conductivity, matrix, rhs);
+        addTetrahedronContribution(mesh, tet, conductivity, matrix, rhs);
     }
 }
 
@@ -203,8 +209,8 @@ LocalLinearSystem HeatFEMAssembler::assemble(
 
     std::map<int, std::map<int, double>> global_matrix;
     std::map<int, double> global_rhs;
-    for (const auto& wedge : mesh.wedges) {
-        addWedgeContribution(mesh, wedge, global_matrix, global_rhs);
+    for (std::size_t wedge_id = 0; wedge_id < mesh.wedges.size(); ++wedge_id) {
+        addWedgeContribution(mesh, wedge_id, mesh.wedges[wedge_id], global_matrix, global_rhs);
     }
 
     system.is_dirichlet.assign(system.local_to_global.size(), 0);

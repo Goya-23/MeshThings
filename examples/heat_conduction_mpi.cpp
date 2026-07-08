@@ -1,7 +1,10 @@
+#include <array>
 #include <cmath>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <mpi.h>
 
@@ -93,6 +96,7 @@ int main(int argc, char** argv) {
     int nz = 4;
     double height = 1.0;
     double conductivity = 1.0;
+    bool conductivity_overridden = false;
     char method = 'i';
     const char* plc_path = nullptr;
 
@@ -114,6 +118,7 @@ int main(int argc, char** argv) {
     }
     if (argc >= 8) {
         conductivity = std::stod(argv[7]);
+        conductivity_overridden = true;
     }
 
     try {
@@ -123,6 +128,9 @@ int main(int argc, char** argv) {
         std::shared_ptr<PLC2D> plc = plc_path ? parser.parse(plc_path) : parser.makeUnitSquare();
         if (argc < 7) {
             height = plc->getExtrusionHeight();
+        }
+        if (!conductivity_overridden) {
+            conductivity = plc->getDefaultConductivity();
         }
 
         auto factory = std::make_shared<DelaunayTriangulationFactory>();
@@ -139,11 +147,18 @@ int main(int argc, char** argv) {
 
         triangulator->triangulate(plc);
         const Triangulation2D& footprint = triangulator->result();
-        WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity);
+        const std::vector<MaterialRegion2D> material_regions =
+            conductivity_overridden ? std::vector<MaterialRegion2D>{} : plc->getMaterialRegions();
+        WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity, material_regions);
 
         VolumeMesh3D volume_mesh = OpenVolumeMeshAdapter::buildWedgeVolumeMesh(wedge_mesh);
-        WedgeMesh3D mesh_from_ovm =
-            OpenVolumeMeshAdapter::extractWedgeMesh(volume_mesh, wedge_mesh.conductivity);
+        WedgeMesh3D mesh_from_ovm = OpenVolumeMeshAdapter::extractWedgeMesh(
+            volume_mesh,
+            wedge_mesh.conductivity,
+            wedge_mesh.wedge_conductivity,
+            wedge_mesh.wedge_material_id,
+            wedge_mesh.material_names,
+            wedge_mesh.boundary_vertices);
 
         MeshPartition partition;
         if (rank == 0) {
@@ -169,7 +184,25 @@ int main(int argc, char** argv) {
             std::cout << "OpenVolumeMesh cells: " << volume_mesh.n_cells()
                       << ", faces: " << volume_mesh.n_faces()
                       << ", vertices: " << volume_mesh.n_vertices() << "\n";
-            std::cout << "Material conductivity k = " << mesh_from_ovm.conductivity << "\n";
+            std::map<int, std::size_t> material_cell_count;
+            std::map<int, double> material_conductivity;
+            for (std::size_t wedge_id = 0; wedge_id < mesh_from_ovm.wedgeCount(); ++wedge_id) {
+                const int material_id =
+                    wedge_id < mesh_from_ovm.wedge_material_id.size() ? mesh_from_ovm.wedge_material_id[wedge_id] : 0;
+                material_cell_count[material_id]++;
+                material_conductivity[material_id] = mesh_from_ovm.conductivityForWedge(wedge_id);
+            }
+            std::cout << "Material default k = " << mesh_from_ovm.conductivity << "\n";
+            for (const auto& entry : material_cell_count) {
+                const int material_id = entry.first;
+                const std::string material_name =
+                    material_id >= 0 && material_id < static_cast<int>(mesh_from_ovm.material_names.size())
+                        ? mesh_from_ovm.material_names[material_id]
+                        : std::string("material_") + std::to_string(material_id);
+                std::cout << "  material[" << material_id << "] " << material_name
+                          << ": k = " << material_conductivity[material_id]
+                          << ", wedge cells = " << entry.second << "\n";
+            }
             std::cout << "METIS nodal partition into " << partition.num_parts << " parts\n";
         }
 
