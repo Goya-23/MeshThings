@@ -19,4 +19,14 @@
 
 ## Verification
 
-- Pending build and MPI run after the implementation commit, per branch workflow.
+- Configured and built successfully:
+  - `CXX=g++ CC=gcc cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
+  - `cmake --build build -j`
+- Ran the new complex multi-material case:
+  - `mpirun --allow-run-as-root -np 2 ./build/heat_conduction_mpi examples/complex_heat_multimaterial.plc i 18 18 6`
+  - Mesh: 302 footprint vertices, 451 triangles, 2114 wedge vertices, 2706 wedge cells.
+  - Material counts: default 1147, copper core 378, ceramic cap 458, insulation band 258, graphite midplane 312, aluminum lip 153 wedge cells.
+  - HYPRE PCG converged in 24 iterations with residual `2.7354e-11`.
+- Re-ran the original unit brick path for backward compatibility:
+  - `mpirun --allow-run-as-root -np 2 ./build/heat_conduction_mpi examples/unit_brick.plc i 6 6 3`
+  - HYPRE PCG converged in 6 iterations with residual `1.72381e-12`.
