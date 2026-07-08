@@ -4,29 +4,38 @@
 #include "plc.h"
 #include "delaunayTriangulation.h"
 
-
-
-class IncrementalDelaunayTriangulation : public DelaunayTriangulation
-{
+class IncrementalDelaunayTriangulation : public DelaunayTriangulation {
 public:
     IncrementalDelaunayTriangulation() {}
     virtual ~IncrementalDelaunayTriangulation() {}
-    
-    void triangulate(std::shared_ptr<PLC2D> plc);
 
+    void setGridDensity(int nx, int ny) {
+        nx_ = nx;
+        ny_ = ny;
+    }
 
+    void triangulate(std::shared_ptr<PLC2D> plc) override;
 
+private:
+    int nx_ = 8;
+    int ny_ = 8;
 };
 
-
-
-class SweepLineDelaunayTriangulation : public DelaunayTriangulation
-{
+class SweepLineDelaunayTriangulation : public DelaunayTriangulation {
 public:
     SweepLineDelaunayTriangulation() {}
     virtual ~SweepLineDelaunayTriangulation() {}
 
-    void triangulate(std::shared_ptr<PLC2D> plc);
+    void setGridDensity(int nx, int ny) {
+        nx_ = nx;
+        ny_ = ny;
+    }
+
+    void triangulate(std::shared_ptr<PLC2D> plc) override;
+
+private:
+    int nx_ = 8;
+    int ny_ = 8;
 };
 
-#endif // _CONCRETE_DELAUNAY_TRIANGULATION_H_
+#endif  // _CONCRETE_DELAUNAY_TRIANGULATION_H_
