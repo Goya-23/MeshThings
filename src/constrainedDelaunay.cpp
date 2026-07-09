@@ -5,10 +5,13 @@
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace {
 
 constexpr double kEpsilon = 1.0e-12;
+constexpr int kStructuredClipCellThreshold = 4096;
 
 int findVertexIndex(const Triangulation2D& mesh, const Point2D& point) {
     for (std::size_t i = 0; i < mesh.vertices.size(); ++i) {
@@ -93,6 +96,65 @@ bool isAxisAlignedRectangle(const PLC2D& plc) {
     return axis_aligned_edges == 4;
 }
 
+std::pair<int, int> sortedEdge(int a, int b) {
+    if (a > b) {
+        std::swap(a, b);
+    }
+    return {a, b};
+}
+
+void compactUnusedVertices(Triangulation2D& mesh) {
+    std::vector<char> used(mesh.vertices.size(), 0);
+    for (const auto& triangle : mesh.triangles) {
+        used[triangle[0]] = 1;
+        used[triangle[1]] = 1;
+        used[triangle[2]] = 1;
+    }
+    for (const auto& edge : mesh.constrained_edges) {
+        if (edge.first >= 0 && edge.first < static_cast<int>(used.size())) {
+            used[edge.first] = 1;
+        }
+        if (edge.second >= 0 && edge.second < static_cast<int>(used.size())) {
+            used[edge.second] = 1;
+        }
+    }
+
+    std::vector<int> old_to_new(mesh.vertices.size(), -1);
+    std::vector<Point2D> vertices;
+    vertices.reserve(mesh.vertices.size());
+    for (std::size_t vertex_id = 0; vertex_id < mesh.vertices.size(); ++vertex_id) {
+        if (!used[vertex_id]) {
+            continue;
+        }
+        old_to_new[vertex_id] = static_cast<int>(vertices.size());
+        vertices.push_back(mesh.vertices[vertex_id]);
+    }
+
+    for (auto& triangle : mesh.triangles) {
+        triangle[0] = old_to_new[triangle[0]];
+        triangle[1] = old_to_new[triangle[1]];
+        triangle[2] = old_to_new[triangle[2]];
+    }
+
+    std::vector<std::pair<int, int>> constrained_edges;
+    constrained_edges.reserve(mesh.constrained_edges.size());
+    for (const auto& edge : mesh.constrained_edges) {
+        if (edge.first < 0 || edge.second < 0 ||
+            edge.first >= static_cast<int>(old_to_new.size()) ||
+            edge.second >= static_cast<int>(old_to_new.size())) {
+            continue;
+        }
+        const int first = old_to_new[edge.first];
+        const int second = old_to_new[edge.second];
+        if (first >= 0 && second >= 0 && first != second) {
+            constrained_edges.emplace_back(first, second);
+        }
+    }
+
+    mesh.vertices = std::move(vertices);
+    mesh.constrained_edges = std::move(constrained_edges);
+}
+
 void triangulateStructuredRectangle(int nx, int ny, Triangulation2D& mesh) {
     if (mesh.vertices.empty()) {
         return;
@@ -149,6 +211,107 @@ void triangulateStructuredRectangle(int nx, int ny, Triangulation2D& mesh) {
     }
 }
 
+bool triangulateStructuredClip(const PLC2D& plc, int nx, int ny, Triangulation2D& mesh) {
+    if (plc.getPolygons().empty()) {
+        return false;
+    }
+
+    const auto& boundary = plc.getPolygons().front().getPoints();
+    if (boundary.size() < 3) {
+        return false;
+    }
+
+    double xmin = boundary.front().x_;
+    double xmax = boundary.front().x_;
+    double ymin = boundary.front().y_;
+    double ymax = boundary.front().y_;
+    for (const auto& point : boundary) {
+        xmin = std::min(xmin, point.x_);
+        xmax = std::max(xmax, point.x_);
+        ymin = std::min(ymin, point.y_);
+        ymax = std::max(ymax, point.y_);
+    }
+
+    nx = std::max(nx, 1);
+    ny = std::max(ny, 1);
+    const int npx = nx + 1;
+    const int npy = ny + 1;
+    mesh.vertices.clear();
+    mesh.triangles.clear();
+    mesh.constrained_edges.clear();
+    mesh.vertices.reserve(static_cast<std::size_t>(npx) * static_cast<std::size_t>(npy));
+
+    for (int j = 0; j <= ny; ++j) {
+        for (int i = 0; i <= nx; ++i) {
+            const double x = xmin + (xmax - xmin) * static_cast<double>(i) / static_cast<double>(nx);
+            const double y = ymin + (ymax - ymin) * static_cast<double>(j) / static_cast<double>(ny);
+            mesh.vertices.emplace_back(x, y);
+        }
+    }
+
+    auto vertex_index = [npx](int i, int j) { return j * npx + i; };
+    const auto keep_triangle = [&](const std::array<int, 3>& triangle) {
+        const auto& a = mesh.vertices[triangle[0]];
+        const auto& b = mesh.vertices[triangle[1]];
+        const auto& c = mesh.vertices[triangle[2]];
+        const Point2D centroid(
+            (a.x_ + b.x_ + c.x_) / 3.0,
+            (a.y_ + b.y_ + c.y_) / 3.0);
+        if (!pointInPolygon(centroid, boundary)) {
+            return false;
+        }
+        for (const auto& hole : plc.getHoles()) {
+            if (pointInTriangle(hole, a, b, c)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    mesh.triangles.reserve(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny) * 2);
+    for (int j = 0; j < ny; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            const int v00 = vertex_index(i, j);
+            const int v10 = vertex_index(i + 1, j);
+            const int v01 = vertex_index(i, j + 1);
+            const int v11 = vertex_index(i + 1, j + 1);
+            const std::array<int, 3> lower = {v00, v10, v11};
+            const std::array<int, 3> upper = {v00, v11, v01};
+            if (keep_triangle(lower)) {
+                mesh.triangles.push_back(lower);
+            }
+            if (keep_triangle(upper)) {
+                mesh.triangles.push_back(upper);
+            }
+        }
+    }
+
+    if (mesh.triangles.empty()) {
+        return false;
+    }
+
+    struct EdgeHash {
+        std::size_t operator()(const std::pair<int, int>& edge) const {
+            return std::hash<int>()(edge.first) ^ (std::hash<int>()(edge.second) << 1);
+        }
+    };
+    std::unordered_map<std::pair<int, int>, int, EdgeHash> edge_count;
+    for (const auto& triangle : mesh.triangles) {
+        ++edge_count[sortedEdge(triangle[0], triangle[1])];
+        ++edge_count[sortedEdge(triangle[1], triangle[2])];
+        ++edge_count[sortedEdge(triangle[2], triangle[0])];
+    }
+    mesh.constrained_edges.reserve(edge_count.size());
+    for (const auto& entry : edge_count) {
+        if (entry.second == 1) {
+            mesh.constrained_edges.push_back(entry.first);
+        }
+    }
+
+    compactUnusedVertices(mesh);
+    return true;
+}
+
 }  // namespace
 
 Triangulation2D ConstrainedDelaunayTriangulator::triangulate(const PLC2D& plc, int nx, int ny) {
@@ -158,6 +321,11 @@ Triangulation2D ConstrainedDelaunayTriangulator::triangulate(const PLC2D& plc, i
 
     if (isAxisAlignedRectangle(plc)) {
         triangulateStructuredRectangle(nx, ny, mesh);
+        return mesh;
+    }
+
+    if (nx * ny >= kStructuredClipCellThreshold &&
+        triangulateStructuredClip(plc, nx, ny, mesh)) {
         return mesh;
     }
 

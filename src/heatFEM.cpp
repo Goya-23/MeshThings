@@ -210,7 +210,18 @@ LocalLinearSystem HeatFEMAssembler::assemble(
     std::map<int, std::map<int, double>> global_matrix;
     std::map<int, double> global_rhs;
     for (std::size_t wedge_id = 0; wedge_id < mesh.wedges.size(); ++wedge_id) {
-        addWedgeContribution(mesh, wedge_id, mesh.wedges[wedge_id], global_matrix, global_rhs);
+        const auto& wedge = mesh.wedges[wedge_id];
+        bool touches_owned = false;
+        for (int corner = 0; corner < 6; ++corner) {
+            if (partition.vertex_part[wedge[corner]] == rank) {
+                touches_owned = true;
+                break;
+            }
+        }
+        if (!touches_owned) {
+            continue;
+        }
+        addWedgeContribution(mesh, wedge_id, wedge, global_matrix, global_rhs);
     }
 
     system.is_dirichlet.assign(system.local_to_global.size(), 0);

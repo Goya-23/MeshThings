@@ -4,6 +4,8 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <utility>
 
 namespace {
 
@@ -22,8 +24,35 @@ bool pointOnSegment(const Point2D& point, const Point2D& a, const Point2D& b) {
     return point.x_ >= xmin && point.x_ <= xmax && point.y_ >= ymin && point.y_ <= ymax;
 }
 
+std::pair<int, int> sortedEdge(int a, int b) {
+    if (a > b) {
+        std::swap(a, b);
+    }
+    return {a, b};
+}
+
 std::vector<char> findBaseBoundaryVertices(const Triangulation2D& base) {
     std::vector<char> boundary(base.vertexCount(), 0);
+
+    struct EdgeHash {
+        std::size_t operator()(const std::pair<int, int>& edge) const {
+            return std::hash<int>()(edge.first) ^ (std::hash<int>()(edge.second) << 1);
+        }
+    };
+    std::unordered_map<std::pair<int, int>, int, EdgeHash> edge_count;
+    for (const auto& triangle : base.triangles) {
+        ++edge_count[sortedEdge(triangle[0], triangle[1])];
+        ++edge_count[sortedEdge(triangle[1], triangle[2])];
+        ++edge_count[sortedEdge(triangle[2], triangle[0])];
+    }
+    for (const auto& entry : edge_count) {
+        if (entry.second != 1) {
+            continue;
+        }
+        boundary[entry.first.first] = 1;
+        boundary[entry.first.second] = 1;
+    }
+
     for (const auto& edge : base.constrained_edges) {
         if (edge.first < 0 || edge.first >= static_cast<int>(boundary.size()) ||
             edge.second < 0 || edge.second >= static_cast<int>(boundary.size())) {
@@ -35,6 +64,9 @@ std::vector<char> findBaseBoundaryVertices(const Triangulation2D& base) {
         const Point2D& a = base.vertices[edge.first];
         const Point2D& b = base.vertices[edge.second];
         for (std::size_t vertex_id = 0; vertex_id < base.vertices.size(); ++vertex_id) {
+            if (boundary[vertex_id]) {
+                continue;
+            }
             if (pointOnSegment(base.vertices[vertex_id], a, b)) {
                 boundary[vertex_id] = 1;
             }

@@ -1,0 +1,4 @@
+processes,wedge_cells,total_seconds_max,rss_max_kib,rss_sum_kib,log_file
+1,109504,1.424189,234160,234160,logs/benchmarks/heat_np1_nx110_ny90_nz8.log
+2,109504,1.294379,187488,352356,logs/benchmarks/heat_np2_nx110_ny90_nz8.log
+4,109504,1.129636,182988,603796,logs/benchmarks/heat_np4_nx110_ny90_nz8.log
