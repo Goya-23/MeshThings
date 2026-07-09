@@ -1,10 +1,14 @@
 #include <array>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <sys/resource.h>
 
 #include <mpi.h>
 
@@ -21,6 +25,41 @@
 #include "wedgeMesh.h"
 
 namespace {
+
+long long peakResidentSetKiB() {
+    rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) != 0) {
+        return 0;
+    }
+    return static_cast<long long>(usage.ru_maxrss);
+}
+
+void reportPhaseMetrics(MPI_Comm comm, int rank, const std::string& phase, double seconds) {
+    double min_seconds = 0.0;
+    double max_seconds = 0.0;
+    double sum_seconds = 0.0;
+    MPI_Reduce(&seconds, &min_seconds, 1, MPI_DOUBLE, MPI_MIN, 0, comm);
+    MPI_Reduce(&seconds, &max_seconds, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+    MPI_Reduce(&seconds, &sum_seconds, 1, MPI_DOUBLE, MPI_SUM, 0, comm);
+
+    const long long rss_kib = peakResidentSetKiB();
+    long long max_rss_kib = 0;
+    long long sum_rss_kib = 0;
+    MPI_Reduce(&rss_kib, &max_rss_kib, 1, MPI_LONG_LONG, MPI_MAX, 0, comm);
+    MPI_Reduce(&rss_kib, &sum_rss_kib, 1, MPI_LONG_LONG, MPI_SUM, 0, comm);
+
+    int size = 1;
+    MPI_Comm_size(comm, &size);
+    if (rank == 0) {
+        std::cout << std::fixed << std::setprecision(6)
+                  << "METRIC phase=" << phase
+                  << " seconds_min=" << min_seconds
+                  << " seconds_avg=" << (sum_seconds / static_cast<double>(size))
+                  << " seconds_max=" << max_seconds
+                  << " rss_max_kib=" << max_rss_kib
+                  << " rss_sum_kib=" << sum_rss_kib << "\n";
+    }
+}
 
 double computeL2Error(
     const WedgeMesh3D& mesh,
@@ -85,6 +124,7 @@ double computeL2Error(
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
+    const double total_start = MPI_Wtime();
 
     int rank = 0;
     int size = 1;
@@ -124,6 +164,7 @@ int main(int argc, char** argv) {
     try {
         HYPRE_Init();
 
+        double phase_start = MPI_Wtime();
         PLCParser parser;
         std::shared_ptr<PLC2D> plc = plc_path ? parser.parse(plc_path) : parser.makeUnitSquare();
         if (argc < 7) {
@@ -147,6 +188,9 @@ int main(int argc, char** argv) {
 
         triangulator->triangulate(plc);
         const Triangulation2D& footprint = triangulator->result();
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "parse_triangulate", MPI_Wtime() - phase_start);
+
+        phase_start = MPI_Wtime();
         const std::vector<MaterialRegion2D> material_regions =
             conductivity_overridden ? std::vector<MaterialRegion2D>{} : plc->getMaterialRegions();
         WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity, material_regions);
@@ -159,7 +203,9 @@ int main(int argc, char** argv) {
             wedge_mesh.wedge_material_id,
             wedge_mesh.material_names,
             wedge_mesh.boundary_vertices);
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "extrude_ovm", MPI_Wtime() - phase_start);
 
+        phase_start = MPI_Wtime();
         MeshPartition partition;
         if (rank == 0) {
             partition = MeshPartitioner::partitionNodal(mesh_from_ovm, size);
@@ -207,15 +253,24 @@ int main(int argc, char** argv) {
         }
 
         mesh_from_ovm = MeshPartitioner::reorderByPartition(mesh_from_ovm, partition);
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "partition_reorder", MPI_Wtime() - phase_start);
 
+        phase_start = MPI_Wtime();
         LocalLinearSystem system = HeatFEMAssembler::assemble(MPI_COMM_WORLD, mesh_from_ovm, partition);
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "assembly", MPI_Wtime() - phase_start);
+
+        phase_start = MPI_Wtime();
         std::vector<double> local_solution = HypreSolver::solve(MPI_COMM_WORLD, system);
         std::vector<double> gathered_solution = HypreSolver::gatherSolution(MPI_COMM_WORLD, system, local_solution);
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "solve", MPI_Wtime() - phase_start);
 
+        phase_start = MPI_Wtime();
         const double l2_error = computeL2Error(mesh_from_ovm, gathered_solution, rank);
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "error", MPI_Wtime() - phase_start);
         if (rank == 0) {
             std::cout << "HYPRE solve complete. Relative L2 error vs manufactured solution: " << l2_error << "\n";
         }
+        reportPhaseMetrics(MPI_COMM_WORLD, rank, "total", MPI_Wtime() - total_start);
 
         HYPRE_Finalize();
     } catch (const std::exception& ex) {
