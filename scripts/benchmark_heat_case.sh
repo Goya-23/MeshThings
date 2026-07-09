@@ -24,7 +24,7 @@ for np in ${process_counts}; do
     mpirun --allow-run-as-root -np "${np}" "${binary}" "${repo_root}/${case_file}" "${method}" "${nx}" "${ny}" "${nz}" \
         > "${log_file}" 2>&1
 
-    wedge_cells="$(awk '/Wedge mesh:/ {print $(NF-2)}' "${log_file}" | tail -n 1)"
+    wedge_cells="$(awk '/Wedge mesh:/ {value=$(NF-2)} END {print value}' "${log_file}")"
     total_metric="$(awk '/METRIC phase=total/ {line=$0} END {print line}' "${log_file}")"
     total_seconds="$(awk -v line="${total_metric}" 'BEGIN {n=split(line, fields, " "); for (i=1; i<=n; ++i) if (fields[i] ~ /^seconds_max=/) {split(fields[i], value, "="); print value[2]}}')"
     rss_max="$(awk -v line="${total_metric}" 'BEGIN {n=split(line, fields, " "); for (i=1; i<=n; ++i) if (fields[i] ~ /^rss_max_kib=/) {split(fields[i], value, "="); print value[2]}}')"

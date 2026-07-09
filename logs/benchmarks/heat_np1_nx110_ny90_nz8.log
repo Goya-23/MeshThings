@@ -1,0 +1,27 @@
+METRIC phase=parse_triangulate seconds_min=0.027937 seconds_avg=0.027937 seconds_max=0.027937 rss_max_kib=21872 rss_sum_kib=21872
+METRIC phase=extrude_ovm seconds_min=0.577178 seconds_avg=0.577178 seconds_max=0.577178 rss_max_kib=130200 rss_sum_kib=130200
+Footprint CDT: 7069 vertices, 13688 triangles
+Wedge mesh: 63621 vertices, 109504 wedge cells
+OpenVolumeMesh cells: 109504, faces: 289240, vertices: 63621
+Material default k = 2.500000
+  material[0] default: k = 2.500000, wedge cells = 18196
+  material[1] aluminum_frame: k = 205.000000, wedge cells = 32289
+  material[2] copper_bus_left: k = 385.000000, wedge cells = 7496
+  material[3] copper_bus_right: k = 385.000000, wedge cells = 10408
+  material[4] ceramic_power_stage: k = 24.000000, wedge cells = 11848
+  material[5] graphite_spreader: k = 130.000000, wedge cells = 3375
+  material[6] aerogel_slot: k = 0.035000, wedge cells = 5884
+  material[7] polymer_gap: k = 0.180000, wedge cells = 4056
+  material[8] steel_mount: k = 45.000000, wedge cells = 6607
+  material[9] silicon_die: k = 149.000000, wedge cells = 1611
+  material[10] coolant_channel: k = 0.600000, wedge cells = 3390
+  material[11] diamond_insert: k = 1000.000000, wedge cells = 1520
+  material[12] low_k_lid: k = 0.120000, wedge cells = 2824
+METIS nodal partition into 1 parts
+METRIC phase=partition_reorder seconds_min=0.012120 seconds_avg=0.012120 seconds_max=0.012120 rss_max_kib=139544 rss_sum_kib=139544
+METRIC phase=assembly seconds_min=0.584159 seconds_avg=0.584159 seconds_max=0.584159 rss_max_kib=219288 rss_sum_kib=219288
+HYPRE PCG iterations: 10, residual: 0.000000
+METRIC phase=solve seconds_min=0.212370 seconds_avg=0.212370 seconds_max=0.212370 rss_max_kib=234160 rss_sum_kib=234160
+METRIC phase=error seconds_min=0.010158 seconds_avg=0.010158 seconds_max=0.010158 rss_max_kib=234160 rss_sum_kib=234160
+HYPRE solve complete. Relative L2 error vs manufactured solution: 0.310276
+METRIC phase=total seconds_min=1.424189 seconds_avg=1.424189 seconds_max=1.424189 rss_max_kib=234160 rss_sum_kib=234160

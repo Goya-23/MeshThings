@@ -35,3 +35,52 @@ scripts/benchmark_heat_case.sh "1 2 4" examples/large_composite_heat_multimateri
 
 The helper leaves the complete command output in `logs/benchmarks/` and prints a compact
 summary containing process count, wedge cells, total runtime, and memory.
+
+## Verification and process-count comparison
+
+Run on 2026-07-09:
+
+```bash
+scripts/benchmark_heat_case.sh "1 2 4" examples/large_composite_heat_multimaterial.plc 110 90 8
+```
+
+Common mesh and solve results:
+
+```text
+Footprint CDT: 7069 vertices, 13688 triangles
+Wedge mesh: 63621 vertices, 109504 wedge cells
+OpenVolumeMesh cells: 109504, faces: 289240, vertices: 63621
+HYPRE PCG iterations: 10
+Relative L2 error vs manufactured solution: 0.310276
+```
+
+Material cell counts:
+
+| material | conductivity | wedge cells |
+| --- | ---: | ---: |
+| default | 2.5 | 18196 |
+| aluminum_frame | 205.0 | 32289 |
+| copper_bus_left | 385.0 | 7496 |
+| copper_bus_right | 385.0 | 10408 |
+| ceramic_power_stage | 24.0 | 11848 |
+| graphite_spreader | 130.0 | 3375 |
+| aerogel_slot | 0.035 | 5884 |
+| polymer_gap | 0.18 | 4056 |
+| steel_mount | 45.0 | 6607 |
+| silicon_die | 149.0 | 1611 |
+| coolant_channel | 0.60 | 3390 |
+| diamond_insert | 1000.0 | 1520 |
+| low_k_lid | 0.12 | 2824 |
+
+Process-count comparison from the executable's `METRIC phase=total` line:
+
+| MPI processes | wedge cells | total seconds max | max RSS KiB | summed RSS KiB | log |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 109504 | 1.424189 | 234160 | 234160 | `logs/benchmarks/heat_np1_nx110_ny90_nz8.log` |
+| 2 | 109504 | 1.294379 | 187488 | 352356 | `logs/benchmarks/heat_np2_nx110_ny90_nz8.log` |
+| 4 | 109504 | 1.129636 | 182988 | 603796 | `logs/benchmarks/heat_np4_nx110_ny90_nz8.log` |
+
+The assembly phase benefits most from more ranks after the per-rank assembly change
+(`0.584159s` at 1 rank, `0.276112s` at 2 ranks, `0.140082s` at 4 ranks). The solve still
+gathers to rank 0 before using HYPRE, so total runtime does not scale linearly and summed
+RSS increases with process count.
