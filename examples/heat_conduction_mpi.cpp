@@ -1,8 +1,12 @@
 #include <array>
 #include <cmath>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -21,6 +25,52 @@
 #include "wedgeMesh.h"
 
 namespace {
+
+long readProcStatusKb(const std::string& key) {
+    std::ifstream status("/proc/self/status");
+    std::string line;
+    while (std::getline(status, line)) {
+        if (line.rfind(key, 0) != 0) {
+            continue;
+        }
+
+        std::istringstream stream(line.substr(key.size()));
+        long value_kb = 0;
+        stream >> value_kb;
+        return value_kb;
+    }
+    return 0;
+}
+
+double reduceMaxDouble(MPI_Comm comm, double value, int root = 0) {
+    double reduced = 0.0;
+    MPI_Reduce(&value, &reduced, 1, MPI_DOUBLE, MPI_MAX, root, comm);
+    return reduced;
+}
+
+long reduceMaxLong(MPI_Comm comm, long value, int root = 0) {
+    long reduced = 0;
+    MPI_Reduce(&value, &reduced, 1, MPI_LONG, MPI_MAX, root, comm);
+    return reduced;
+}
+
+long long reduceSumLongLong(MPI_Comm comm, long long value, int root = 0) {
+    long long reduced = 0;
+    MPI_Reduce(&value, &reduced, 1, MPI_LONG_LONG, MPI_SUM, root, comm);
+    return reduced;
+}
+
+int reduceMinInt(MPI_Comm comm, int value, int root = 0) {
+    int reduced = std::numeric_limits<int>::max();
+    MPI_Reduce(&value, &reduced, 1, MPI_INT, MPI_MIN, root, comm);
+    return reduced;
+}
+
+int reduceMaxInt(MPI_Comm comm, int value, int root = 0) {
+    int reduced = 0;
+    MPI_Reduce(&value, &reduced, 1, MPI_INT, MPI_MAX, root, comm);
+    return reduced;
+}
 
 double computeL2Error(
     const WedgeMesh3D& mesh,
@@ -124,6 +174,9 @@ int main(int argc, char** argv) {
     try {
         HYPRE_Init();
 
+        const double total_start = MPI_Wtime();
+
+        double stage_start = MPI_Wtime();
         PLCParser parser;
         std::shared_ptr<PLC2D> plc = plc_path ? parser.parse(plc_path) : parser.makeUnitSquare();
         if (argc < 7) {
@@ -132,7 +185,9 @@ int main(int argc, char** argv) {
         if (!conductivity_overridden) {
             conductivity = plc->getDefaultConductivity();
         }
+        const double parse_s = MPI_Wtime() - stage_start;
 
+        stage_start = MPI_Wtime();
         auto factory = std::make_shared<DelaunayTriangulationFactory>();
         std::shared_ptr<DelaunayTriangulation> triangulator = factory->produce(method);
         if (!triangulator) {
@@ -147,10 +202,16 @@ int main(int argc, char** argv) {
 
         triangulator->triangulate(plc);
         const Triangulation2D& footprint = triangulator->result();
+        const double cdt_s = MPI_Wtime() - stage_start;
+
         const std::vector<MaterialRegion2D> material_regions =
             conductivity_overridden ? std::vector<MaterialRegion2D>{} : plc->getMaterialRegions();
-        WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity, material_regions);
 
+        stage_start = MPI_Wtime();
+        WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity, material_regions);
+        const double extrude_s = MPI_Wtime() - stage_start;
+
+        stage_start = MPI_Wtime();
         VolumeMesh3D volume_mesh = OpenVolumeMeshAdapter::buildWedgeVolumeMesh(wedge_mesh);
         WedgeMesh3D mesh_from_ovm = OpenVolumeMeshAdapter::extractWedgeMesh(
             volume_mesh,
@@ -159,7 +220,9 @@ int main(int argc, char** argv) {
             wedge_mesh.wedge_material_id,
             wedge_mesh.material_names,
             wedge_mesh.boundary_vertices);
+        const double ovm_s = MPI_Wtime() - stage_start;
 
+        stage_start = MPI_Wtime();
         MeshPartition partition;
         if (rank == 0) {
             partition = MeshPartitioner::partitionNodal(mesh_from_ovm, size);
@@ -175,6 +238,7 @@ int main(int argc, char** argv) {
         }
         MPI_Bcast(partition.element_part.data(), wedge_count, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Bcast(partition.vertex_part.data(), vertex_count, MPI_INT, 0, MPI_COMM_WORLD);
+        const double partition_s = MPI_Wtime() - stage_start;
 
         if (rank == 0) {
             std::cout << "Footprint CDT: " << footprint.vertexCount() << " vertices, "
@@ -206,15 +270,107 @@ int main(int argc, char** argv) {
             std::cout << "METIS nodal partition into " << partition.num_parts << " parts\n";
         }
 
+        stage_start = MPI_Wtime();
         mesh_from_ovm = MeshPartitioner::reorderByPartition(mesh_from_ovm, partition);
+        const double reorder_s = MPI_Wtime() - stage_start;
 
+        stage_start = MPI_Wtime();
         LocalLinearSystem system = HeatFEMAssembler::assemble(MPI_COMM_WORLD, mesh_from_ovm, partition);
-        std::vector<double> local_solution = HypreSolver::solve(MPI_COMM_WORLD, system);
-        std::vector<double> gathered_solution = HypreSolver::gatherSolution(MPI_COMM_WORLD, system, local_solution);
+        const double assembly_s = MPI_Wtime() - stage_start;
 
+        const int local_rows = static_cast<int>(system.owned_vertices.size());
+        const int min_rows = reduceMinInt(MPI_COMM_WORLD, local_rows);
+        const int max_rows = reduceMaxInt(MPI_COMM_WORLD, local_rows);
+        const long long total_nnz = reduceSumLongLong(MPI_COMM_WORLD, static_cast<long long>(system.values.size()));
+        const int local_nnz = static_cast<int>(system.values.size());
+        const int min_nnz = reduceMinInt(MPI_COMM_WORLD, local_nnz);
+        const int max_nnz = reduceMaxInt(MPI_COMM_WORLD, local_nnz);
+
+        if (rank == 0) {
+            std::cout << "Local rows per rank: min = " << min_rows
+                      << ", max = " << max_rows
+                      << ", total = " << system.global_size << "\n";
+            std::cout << "Sparse matrix nnz: total = " << total_nnz
+                      << ", min/rank = " << min_nnz
+                      << ", max/rank = " << max_nnz << "\n";
+        }
+
+        stage_start = MPI_Wtime();
+        std::vector<double> local_solution = HypreSolver::solve(MPI_COMM_WORLD, system);
+        const double solve_s = MPI_Wtime() - stage_start;
+
+        stage_start = MPI_Wtime();
+        std::vector<double> gathered_solution = HypreSolver::gatherSolution(MPI_COMM_WORLD, system, local_solution);
+        const double gather_solution_s = MPI_Wtime() - stage_start;
+
+        stage_start = MPI_Wtime();
         const double l2_error = computeL2Error(mesh_from_ovm, gathered_solution, rank);
+        const double error_s = MPI_Wtime() - stage_start;
+        const double total_s = MPI_Wtime() - total_start;
+
+        const double max_parse_s = reduceMaxDouble(MPI_COMM_WORLD, parse_s);
+        const double max_cdt_s = reduceMaxDouble(MPI_COMM_WORLD, cdt_s);
+        const double max_extrude_s = reduceMaxDouble(MPI_COMM_WORLD, extrude_s);
+        const double max_ovm_s = reduceMaxDouble(MPI_COMM_WORLD, ovm_s);
+        const double max_partition_s = reduceMaxDouble(MPI_COMM_WORLD, partition_s);
+        const double max_reorder_s = reduceMaxDouble(MPI_COMM_WORLD, reorder_s);
+        const double max_assembly_s = reduceMaxDouble(MPI_COMM_WORLD, assembly_s);
+        const double max_solve_s = reduceMaxDouble(MPI_COMM_WORLD, solve_s);
+        const double max_gather_solution_s = reduceMaxDouble(MPI_COMM_WORLD, gather_solution_s);
+        const double max_error_s = reduceMaxDouble(MPI_COMM_WORLD, error_s);
+        const double max_total_s = reduceMaxDouble(MPI_COMM_WORLD, total_s);
+        const long max_rss_kb = reduceMaxLong(MPI_COMM_WORLD, readProcStatusKb("VmRSS:"));
+        const long max_peak_kb = reduceMaxLong(MPI_COMM_WORLD, readProcStatusKb("VmHWM:"));
+
         if (rank == 0) {
             std::cout << "HYPRE solve complete. Relative L2 error vs manufactured solution: " << l2_error << "\n";
+            std::cout << std::fixed << std::setprecision(6);
+            std::cout << "Stage timings (max seconds across ranks):"
+                      << " parse=" << max_parse_s
+                      << " cdt=" << max_cdt_s
+                      << " extrude=" << max_extrude_s
+                      << " ovm=" << max_ovm_s
+                      << " partition=" << max_partition_s
+                      << " reorder=" << max_reorder_s
+                      << " assembly=" << max_assembly_s
+                      << " solve=" << max_solve_s
+                      << " gather_solution=" << max_gather_solution_s
+                      << " l2=" << max_error_s
+                      << " total=" << max_total_s << "\n";
+            std::cout << "Memory usage (max across ranks): rss_mb="
+                      << static_cast<double>(max_rss_kb) / 1024.0
+                      << " peak_rss_mb=" << static_cast<double>(max_peak_kb) / 1024.0 << "\n";
+            std::cout << "BENCHMARK"
+                      << " ranks=" << size
+                      << " plc=" << (plc_path ? plc_path : "unit_square")
+                      << " method=" << method
+                      << " nx=" << nx
+                      << " ny=" << ny
+                      << " nz=" << nz
+                      << " height=" << height
+                      << " footprint_vertices=" << footprint.vertexCount()
+                      << " footprint_triangles=" << footprint.triangleCount()
+                      << " vertices=" << mesh_from_ovm.vertexCount()
+                      << " wedges=" << mesh_from_ovm.wedgeCount()
+                      << " nnz=" << total_nnz
+                      << " min_rows=" << min_rows
+                      << " max_rows=" << max_rows
+                      << " min_nnz=" << min_nnz
+                      << " max_nnz=" << max_nnz
+                      << " parse_s=" << max_parse_s
+                      << " cdt_s=" << max_cdt_s
+                      << " extrude_s=" << max_extrude_s
+                      << " ovm_s=" << max_ovm_s
+                      << " partition_s=" << max_partition_s
+                      << " reorder_s=" << max_reorder_s
+                      << " assembly_s=" << max_assembly_s
+                      << " solve_s=" << max_solve_s
+                      << " gather_solution_s=" << max_gather_solution_s
+                      << " l2_s=" << max_error_s
+                      << " total_s=" << max_total_s
+                      << " rss_mb=" << static_cast<double>(max_rss_kb) / 1024.0
+                      << " peak_rss_mb=" << static_cast<double>(max_peak_kb) / 1024.0
+                      << " l2_error=" << l2_error << "\n";
         }
 
         HYPRE_Finalize();
