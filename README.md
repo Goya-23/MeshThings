@@ -61,7 +61,7 @@ mpirun -np 2 ./build/heat_conduction_mpi examples/unit_brick.plc i 6 6 3
 mpirun -np 2 ./build/heat_conduction_mpi examples/complex_heat_multimaterial.plc i 18 18 6
 
 # Large composite benchmark case with more than 100,000 wedge elements
-mpirun -np 4 ./build/heat_conduction_mpi examples/large_composite_heat_multimaterial.plc i 110 90 8
+mpirun -np 4 ./build/heat_conduction_mpi examples/large_composite_heat_multimaterial.plc i 110 90 9
 ```
 
 ### Arguments

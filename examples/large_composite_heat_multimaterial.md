@@ -29,11 +29,11 @@ Later material regions in the PLC override earlier regions when a wedge centroid
 CXX=g++ CC=gcc cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 mpirun --allow-run-as-root -np 4 ./build/heat_conduction_mpi \
-  examples/large_composite_heat_multimaterial.plc i 110 90 8
+  examples/large_composite_heat_multimaterial.plc i 110 90 9
 ```
 
 The case intentionally omits the command-line conductivity argument so the PLC default conductivity and material regions are used.
 
 ## Benchmark record
 
-The benchmarked `110 90 8` mesh has more than 100,000 wedge elements. Detailed process-count comparisons are recorded under `logs/benchmarks/` and summarized in the daily update log.
+The benchmarked `110 90 9` mesh has more than 100,000 wedge elements. Detailed process-count comparisons are recorded under `logs/benchmarks/` and summarized in the daily update log.
