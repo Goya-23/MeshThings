@@ -36,4 +36,29 @@ The case intentionally omits the command-line conductivity argument so the PLC d
 
 ## Benchmark record
 
-The benchmarked `110 90 9` mesh has more than 100,000 wedge elements. Detailed process-count comparisons are recorded under `logs/benchmarks/` and summarized in the daily update log.
+Run on 2026-07-11 with `nx=110`, `ny=90`, `nz=9`:
+
+```text
+Footprint CDT: 9725 vertices, 11725 triangles
+Wedge mesh: 97250 vertices, 105525 wedge cells
+OpenVolumeMesh cells: 105525, faces: 307663, vertices: 97250
+Sparse matrix nnz: 942974
+HYPRE PCG iterations: 526
+Relative L2 error vs manufactured solution: 0.395812
+```
+
+Process-count comparison:
+
+| MPI ranks | Internal total (s) | Assembly (s) | Solve (s) | Peak RSS/rank (MB) | External wall time |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 4.871292 | 0.590806 | 3.168944 | 268.699219 | 0:05.23 |
+| 2 | 4.725387 | 0.346704 | 3.203277 | 215.355469 | 0:05.07 |
+| 4 | 4.570179 | 0.220473 | 3.174343 | 210.203125 | 0:04.94 |
+
+Detailed logs:
+
+- `logs/benchmarks/large_composite_np1_2026-07-11.log`
+- `logs/benchmarks/large_composite_np2_2026-07-11.log`
+- `logs/benchmarks/large_composite_np4_2026-07-11.log`
+
+Assembly runtime and peak per-rank memory improve as ranks increase. End-to-end runtime changes modestly because the current HYPRE path still gathers the assembled system to rank 0 before solving.
