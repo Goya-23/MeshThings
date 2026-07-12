@@ -55,6 +55,9 @@ std::shared_ptr<PLC2D> PLCParser::parse(const char* path) {
     if (!reader.nextValue(boundary_count)) {
         throw std::runtime_error("PLC file is missing boundary vertex count");
     }
+    if (boundary_count < 3) {
+        throw std::runtime_error("PLC boundary must contain at least three vertices");
+    }
     boundary.reserve(static_cast<std::size_t>(boundary_count));
     for (int i = 0; i < boundary_count; ++i) {
         double x = 0.0;
@@ -68,6 +71,9 @@ std::shared_ptr<PLC2D> PLCParser::parse(const char* path) {
     int hole_count = 0;
     if (!reader.nextValue(hole_count)) {
         throw std::runtime_error("PLC file is missing hole seed count");
+    }
+    if (hole_count < 0) {
+        throw std::runtime_error("PLC hole seed count cannot be negative");
     }
     std::vector<Point2D> holes;
     holes.reserve(static_cast<std::size_t>(hole_count));
@@ -91,6 +97,9 @@ std::shared_ptr<PLC2D> PLCParser::parse(const char* path) {
     int material_region_count = 0;
     if (!reader.nextValue(material_region_count)) {
         material_region_count = 0;
+    }
+    if (material_region_count < 0) {
+        throw std::runtime_error("PLC material region count cannot be negative");
     }
     std::vector<MaterialRegion2D> material_regions;
     material_regions.reserve(static_cast<std::size_t>(material_region_count));
@@ -116,10 +125,6 @@ std::shared_ptr<PLC2D> PLCParser::parse(const char* path) {
             std::swap(region.zmin, region.zmax);
         }
         material_regions.push_back(region);
-    }
-
-    if (boundary.size() < 3) {
-        throw std::runtime_error("PLC boundary must contain at least three vertices");
     }
 
     std::vector<Polygon> polygons;

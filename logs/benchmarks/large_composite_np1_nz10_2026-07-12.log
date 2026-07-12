@@ -1,0 +1,48 @@
+Footprint CDT: 9721 vertices, 10931 triangles
+Wedge mesh: 106931 vertices, 109310 wedge cells
+OpenVolumeMesh cells: 109310, faces: 319251, vertices: 106931
+Material default k = 5
+  material[0] default: k = 5, wedge cells = 44086
+  material[1] copper_bar: k = 385, wedge cells = 6755
+  material[2] aluminum_fin: k = 205, wedge cells = 5487
+  material[3] ceramic_lid: k = 24, wedge cells = 11772
+  material[4] insulation_west: k = 0.08, wedge cells = 6815
+  material[5] graphite_sheet: k = 130, wedge cells = 5462
+  material[6] steel_mount: k = 45, wedge cells = 2668
+  material[7] silicon_tile: k = 148, wedge cells = 5374
+  material[8] polymer_gap: k = 0.22, wedge cells = 6920
+  material[9] brass_corner: k = 109, wedge cells = 1635
+  material[10] diamond_spreader: k = 1200, wedge cells = 3576
+  material[11] air_slot: k = 0.026, wedge cells = 1200
+  material[12] titanium_rib: k = 22, wedge cells = 7560
+METIS nodal partition into 1 parts
+Sparse matrix rows per rank: min = 106931, max = 106931, total = 106931
+Sparse matrix nnz per rank: min = 1010640, max = 1010640, total = 1010640
+HYPRE PCG iterations: 792, residual: 9.11656e-11
+HYPRE solve complete. Relative L2 error vs manufactured solution: 0.368548
+Stage timings (max across ranks, seconds): parse=0.000136 triangulate=0.495368 extrude=0.006545 ovm=0.601817 partition=0.001031 reorder=0.005455 assemble=0.545334 solve=5.092048 error=0.013022 total=6.761749
+Memory high-water mark (max rank): current_rss_mib=283.152344 peak_rss_mib=283.152344
+BENCHMARK case=examples/large_composite_heat_multimaterial.plc method=i ranks=1 nx=110 ny=90 nz=10 height=2.400000 default_k=5.000000 footprint_vertices=9721 footprint_triangles=10931 wedge_vertices=106931 wedge_cells=109310 matrix_rows=106931 matrix_nnz=1010640 l2_error=0.368548 parse_s=0.000136 triangulate_s=0.495368 extrude_s=0.006545 ovm_s=0.601817 partition_s=0.001031 reorder_s=0.005455 assemble_s=0.545334 solve_s=5.092048 error_s=0.013022 total_s=6.761749 rss_mib=283.152344 peak_rss_mib=283.152344
+	Command being timed: "mpirun --allow-run-as-root -np 1 ./build/heat_conduction_mpi examples/large_composite_heat_multimaterial.plc i 110 90 10"
+	User time (seconds): 6.76
+	System time (seconds): 0.16
+	Percent of CPU this job got: 96%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:07.17
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 289848
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 3
+	Minor (reclaiming a frame) page faults: 70702
+	Voluntary context switches: 1316
+	Involuntary context switches: 84
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 112
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
