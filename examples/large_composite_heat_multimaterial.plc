@@ -1,0 +1,51 @@
+# Large composite non-rectangular 2D footprint extruded into z, with material boxes.
+# The outer boundary is a single nonconvex outline assembled from multiple polygonal
+# lobes so the current PLC reader can mesh the composite footprint as one polygon.
+# Format:
+#   boundary vertex count
+#   x y
+#   ...
+#   hole seed count
+#   x y
+#   ...
+#   extrusion height
+#   default conductivity
+#   material region count
+#   name conductivity xmin xmax ymin ymax zmin zmax
+20
+0.00 0.00
+5.20 0.00
+5.75 0.35
+5.55 1.00
+6.20 1.35
+5.90 2.20
+6.45 2.75
+5.55 3.55
+4.70 3.35
+4.20 4.20
+3.25 4.05
+2.70 4.75
+1.85 4.25
+1.05 4.55
+0.55 3.75
+-0.25 3.45
+0.15 2.65
+-0.65 2.05
+0.05 1.45
+-0.40 0.75
+0
+2.40
+5.0
+12
+copper_bar 385.0 0.80 2.30 0.50 1.70 0.00 2.40
+aluminum_fin 205.0 2.20 4.80 0.30 1.25 0.00 1.20
+ceramic_lid 24.0 1.20 4.60 2.80 4.40 1.20 2.40
+insulation_west 0.08 -0.55 0.65 0.80 3.60 0.00 2.40
+graphite_sheet 130.0 0.70 5.20 1.40 3.10 0.95 1.35
+steel_mount 45.0 4.20 6.20 1.10 2.70 0.00 0.90
+silicon_tile 148.0 2.60 3.80 1.60 2.60 0.20 2.10
+polymer_gap 0.22 3.70 5.60 2.40 3.60 0.00 2.40
+brass_corner 109.0 0.20 1.50 3.10 4.45 0.00 0.80
+diamond_spreader 1200.0 1.70 3.20 0.90 2.20 1.35 2.20
+air_slot 0.026 4.90 6.30 0.20 1.40 1.15 2.40
+titanium_rib 22.0 2.00 5.30 0.00 0.55 0.00 2.40
