@@ -30,4 +30,51 @@
 
 ## Verification and benchmark runs
 
-Pending first benchmark run after the implementation commit.
+Configured and built successfully:
+
+```bash
+CXX=g++ CC=gcc cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+Smoke-tested the new case:
+
+```bash
+mpirun --allow-run-as-root -np 2 ./build/heat_conduction_mpi \
+  examples/large_composite_heat_multimaterial.plc i 24 20 3
+```
+
+- Mesh: 457 footprint vertices, 557 footprint triangles, 1,828 wedge vertices, 1,671 wedge cells.
+- All twelve material regions had nonzero cell counts.
+- HYPRE PCG converged in 40 iterations with residual `8.46273e-11`.
+
+Benchmarked the full target mesh:
+
+```bash
+mpirun --allow-run-as-root -np <ranks> ./build/heat_conduction_mpi \
+  examples/large_composite_heat_multimaterial.plc i 110 90 10
+```
+
+- Mesh: 9,721 footprint vertices, 10,931 footprint triangles, 106,931 wedge vertices, 109,310 wedge cells.
+- Matrix: 106,931 rows, 1,010,640 nonzeros.
+- HYPRE PCG converged in 792 iterations for each benchmark run.
+- Relative L2 error vs manufactured solution: `0.368548`.
+
+| MPI ranks | Total runtime (s) | Assembly (s) | Solve (s) | Peak RSS max rank (MiB) | Rows/rank min-max | NNZ/rank min-max |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 6.761749 | 0.545334 | 5.092048 | 283.152344 | 106,931-106,931 | 1,010,640-1,010,640 |
+| 2 | 10.533068 | 0.756862 | 7.405666 | 226.437500 | 53,464-53,467 | 498,858-511,782 |
+| 4 | 8.163529 | 0.394624 | 5.043006 | 220.855469 | 26,706-26,758 | 230,594-281,423 |
+
+Raw benchmark logs:
+
+- `logs/benchmarks/large_composite_smoke_np2_2026-07-12.log`
+- `logs/benchmarks/large_composite_np1_nz10_2026-07-12.log`
+- `logs/benchmarks/large_composite_np2_nz10_2026-07-12.log`
+- `logs/benchmarks/large_composite_np4_nz10_2026-07-12.log`
+
+## Notes and bottlenecks
+
+- The rank-local assembly improvement reduces redundant assembly work.
+- End-to-end runtime does not improve monotonically with process count because mesh generation/OpenVolumeMesh conversion are still replicated on every rank and the HYPRE solve path gathers the sparse system to rank 0.
+- Peak RSS per rank decreased from `283.15 MiB` on one rank to `220.86 MiB` on four ranks, but total process memory increases because each rank still keeps a full copy of the mesh.
