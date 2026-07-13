@@ -1,8 +1,13 @@
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -21,6 +26,94 @@
 #include "wedgeMesh.h"
 
 namespace {
+
+using Clock = std::chrono::steady_clock;
+
+struct DoubleSummary {
+    double min = 0.0;
+    double avg = 0.0;
+    double max = 0.0;
+};
+
+struct LongLongSummary {
+    long long min = 0;
+    double avg = 0.0;
+    long long max = 0;
+    long long sum = 0;
+};
+
+struct ProcessMemory {
+    long long rss_kb = 0;
+    long long peak_rss_kb = 0;
+};
+
+double secondsBetween(Clock::time_point start, Clock::time_point end) {
+    return std::chrono::duration<double>(end - start).count();
+}
+
+DoubleSummary summarizeDouble(MPI_Comm comm, double local_value) {
+    int size = 1;
+    MPI_Comm_size(comm, &size);
+
+    DoubleSummary summary;
+    double sum = 0.0;
+    MPI_Reduce(&local_value, &summary.min, 1, MPI_DOUBLE, MPI_MIN, 0, comm);
+    MPI_Reduce(&local_value, &summary.max, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+    MPI_Reduce(&local_value, &sum, 1, MPI_DOUBLE, MPI_SUM, 0, comm);
+    summary.avg = sum / static_cast<double>(size);
+    return summary;
+}
+
+LongLongSummary summarizeLongLong(MPI_Comm comm, long long local_value) {
+    int size = 1;
+    MPI_Comm_size(comm, &size);
+
+    LongLongSummary summary;
+    MPI_Reduce(&local_value, &summary.min, 1, MPI_LONG_LONG, MPI_MIN, 0, comm);
+    MPI_Reduce(&local_value, &summary.max, 1, MPI_LONG_LONG, MPI_MAX, 0, comm);
+    MPI_Reduce(&local_value, &summary.sum, 1, MPI_LONG_LONG, MPI_SUM, 0, comm);
+    summary.avg = static_cast<double>(summary.sum) / static_cast<double>(size);
+    return summary;
+}
+
+void printStageTiming(MPI_Comm comm, int rank, const std::string& stage, double local_seconds) {
+    const DoubleSummary timing = summarizeDouble(comm, local_seconds);
+    if (rank == 0) {
+        std::cout << "TIMING " << stage << " seconds min/avg/max = "
+                  << timing.min << " / " << timing.avg << " / " << timing.max << "\n";
+    }
+}
+
+ProcessMemory readProcessMemory() {
+    ProcessMemory memory;
+    std::ifstream status("/proc/self/status");
+    std::string key;
+    while (status >> key) {
+        if (key == "VmRSS:" || key == "VmHWM:") {
+            long long value = 0;
+            std::string unit;
+            status >> value >> unit;
+            if (key == "VmRSS:") {
+                memory.rss_kb = value;
+            } else {
+                memory.peak_rss_kb = value;
+            }
+        }
+        std::string ignored;
+        std::getline(status, ignored);
+    }
+    return memory;
+}
+
+void printMemorySummary(MPI_Comm comm, int rank, const ProcessMemory& local_memory) {
+    const LongLongSummary rss = summarizeLongLong(comm, local_memory.rss_kb);
+    const LongLongSummary peak = summarizeLongLong(comm, local_memory.peak_rss_kb);
+    if (rank == 0) {
+        std::cout << "MEMORY rss_mb avg/max = " << rss.avg / 1024.0 << " / " << rss.max / 1024.0
+                  << ", peak_rss_mb avg/max = " << peak.avg / 1024.0 << " / " << peak.max / 1024.0
+                  << "\n";
+    }
+}
 
 double computeL2Error(
     const WedgeMesh3D& mesh,
@@ -123,6 +216,11 @@ int main(int argc, char** argv) {
 
     try {
         HYPRE_Init();
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        std::cout << std::setprecision(6);
+        const auto total_start = Clock::now();
+        auto stage_start = total_start;
 
         PLCParser parser;
         std::shared_ptr<PLC2D> plc = plc_path ? parser.parse(plc_path) : parser.makeUnitSquare();
@@ -132,6 +230,8 @@ int main(int argc, char** argv) {
         if (!conductivity_overridden) {
             conductivity = plc->getDefaultConductivity();
         }
+        printStageTiming(MPI_COMM_WORLD, rank, "parse_plc", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
 
         auto factory = std::make_shared<DelaunayTriangulationFactory>();
         std::shared_ptr<DelaunayTriangulation> triangulator = factory->produce(method);
@@ -147,9 +247,14 @@ int main(int argc, char** argv) {
 
         triangulator->triangulate(plc);
         const Triangulation2D& footprint = triangulator->result();
+        printStageTiming(MPI_COMM_WORLD, rank, "triangulate_footprint", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
+
         const std::vector<MaterialRegion2D> material_regions =
             conductivity_overridden ? std::vector<MaterialRegion2D>{} : plc->getMaterialRegions();
         WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity, material_regions);
+        printStageTiming(MPI_COMM_WORLD, rank, "extrude_wedges", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
 
         VolumeMesh3D volume_mesh = OpenVolumeMeshAdapter::buildWedgeVolumeMesh(wedge_mesh);
         WedgeMesh3D mesh_from_ovm = OpenVolumeMeshAdapter::extractWedgeMesh(
@@ -159,6 +264,8 @@ int main(int argc, char** argv) {
             wedge_mesh.wedge_material_id,
             wedge_mesh.material_names,
             wedge_mesh.boundary_vertices);
+        printStageTiming(MPI_COMM_WORLD, rank, "openvolumemesh_roundtrip", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
 
         MeshPartition partition;
         if (rank == 0) {
@@ -175,6 +282,8 @@ int main(int argc, char** argv) {
         }
         MPI_Bcast(partition.element_part.data(), wedge_count, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Bcast(partition.vertex_part.data(), vertex_count, MPI_INT, 0, MPI_COMM_WORLD);
+        printStageTiming(MPI_COMM_WORLD, rank, "partition_and_broadcast", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
 
         if (rank == 0) {
             std::cout << "Footprint CDT: " << footprint.vertexCount() << " vertices, "
@@ -207,14 +316,51 @@ int main(int argc, char** argv) {
         }
 
         mesh_from_ovm = MeshPartitioner::reorderByPartition(mesh_from_ovm, partition);
+        printStageTiming(MPI_COMM_WORLD, rank, "reorder_by_partition", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
 
         LocalLinearSystem system = HeatFEMAssembler::assemble(MPI_COMM_WORLD, mesh_from_ovm, partition);
+        printStageTiming(MPI_COMM_WORLD, rank, "assemble_local_system", secondsBetween(stage_start, Clock::now()));
+        const LongLongSummary row_balance =
+            summarizeLongLong(MPI_COMM_WORLD, static_cast<long long>(system.owned_vertices.size()));
+        const LongLongSummary nnz_balance =
+            summarizeLongLong(MPI_COMM_WORLD, static_cast<long long>(system.col_indices.size()));
+        if (rank == 0) {
+            std::cout << "MATRIX local_rows min/avg/max = "
+                      << row_balance.min << " / " << row_balance.avg << " / " << row_balance.max
+                      << ", local_nnz min/avg/max = "
+                      << nnz_balance.min << " / " << nnz_balance.avg << " / " << nnz_balance.max << "\n";
+        }
+        stage_start = Clock::now();
+
         std::vector<double> local_solution = HypreSolver::solve(MPI_COMM_WORLD, system);
+        printStageTiming(MPI_COMM_WORLD, rank, "hypre_solve", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
+
         std::vector<double> gathered_solution = HypreSolver::gatherSolution(MPI_COMM_WORLD, system, local_solution);
+        printStageTiming(MPI_COMM_WORLD, rank, "solution_gather", secondsBetween(stage_start, Clock::now()));
+        stage_start = Clock::now();
 
         const double l2_error = computeL2Error(mesh_from_ovm, gathered_solution, rank);
+        printStageTiming(MPI_COMM_WORLD, rank, "l2_error", secondsBetween(stage_start, Clock::now()));
+        const double total_seconds = secondsBetween(total_start, Clock::now());
+        const DoubleSummary total_summary = summarizeDouble(MPI_COMM_WORLD, total_seconds);
+        const ProcessMemory local_memory = readProcessMemory();
+        const LongLongSummary peak_memory_summary = summarizeLongLong(MPI_COMM_WORLD, local_memory.peak_rss_kb);
+        printMemorySummary(MPI_COMM_WORLD, rank, local_memory);
         if (rank == 0) {
             std::cout << "HYPRE solve complete. Relative L2 error vs manufactured solution: " << l2_error << "\n";
+            std::cout << "BENCHMARK"
+                      << " processes=" << size
+                      << " footprint_vertices=" << footprint.vertexCount()
+                      << " footprint_triangles=" << footprint.triangleCount()
+                      << " mesh_vertices=" << mesh_from_ovm.vertexCount()
+                      << " wedge_cells=" << mesh_from_ovm.wedgeCount()
+                      << " matrix_rows=" << system.global_size
+                      << " matrix_nnz=" << nnz_balance.sum
+                      << " total_seconds=" << total_summary.max
+                      << " peak_rss_mb_max=" << peak_memory_summary.max / 1024.0
+                      << " l2_error=" << l2_error << "\n";
         }
 
         HYPRE_Finalize();

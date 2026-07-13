@@ -186,7 +186,9 @@ LocalLinearSystem HeatFEMAssembler::assemble(
     }
 
     std::set<int> touched_vertices(system.owned_vertices.begin(), system.owned_vertices.end());
-    for (const auto& wedge : mesh.wedges) {
+    std::vector<char> assemble_wedge(mesh.wedges.size(), 0);
+    for (std::size_t wedge_id = 0; wedge_id < mesh.wedges.size(); ++wedge_id) {
+        const auto& wedge = mesh.wedges[wedge_id];
         bool touches_owned = false;
         for (int corner = 0; corner < 6; ++corner) {
             if (partition.vertex_part[wedge[corner]] == rank) {
@@ -197,6 +199,7 @@ LocalLinearSystem HeatFEMAssembler::assemble(
         if (!touches_owned) {
             continue;
         }
+        assemble_wedge[wedge_id] = 1;
         for (int corner = 0; corner < 6; ++corner) {
             touched_vertices.insert(wedge[corner]);
         }
@@ -210,6 +213,9 @@ LocalLinearSystem HeatFEMAssembler::assemble(
     std::map<int, std::map<int, double>> global_matrix;
     std::map<int, double> global_rhs;
     for (std::size_t wedge_id = 0; wedge_id < mesh.wedges.size(); ++wedge_id) {
+        if (!assemble_wedge[wedge_id]) {
+            continue;
+        }
         addWedgeContribution(mesh, wedge_id, mesh.wedges[wedge_id], global_matrix, global_rhs);
     }
 
