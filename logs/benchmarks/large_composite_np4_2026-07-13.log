@@ -1,51 +1,51 @@
-TIMING parse_plc seconds min/avg/max = 0.000087 / 0.000088 / 0.000091
-TIMING triangulate_footprint seconds min/avg/max = 0.501131 / 0.502962 / 0.504679
-TIMING extrude_wedges seconds min/avg/max = 0.004517 / 0.005059 / 0.005924
-TIMING openvolumemesh_roundtrip seconds min/avg/max = 0.574823 / 0.579000 / 0.583262
-TIMING partition_and_broadcast seconds min/avg/max = 0.053553 / 0.057573 / 0.066142
+TIMING parse_plc seconds min/avg/max = 8.2197e-05 / 8.32977e-05 / 8.5011e-05
+TIMING triangulate_footprint seconds min/avg/max = 0.492778 / 0.494008 / 0.496233
+TIMING extrude_wedges seconds min/avg/max = 0.00464987 / 0.00480703 / 0.0049737
+TIMING openvolumemesh_roundtrip seconds min/avg/max = 0.581023 / 0.582316 / 0.584452
+TIMING partition_and_broadcast seconds min/avg/max = 0.0603669 / 0.0623261 / 0.0650648
 Footprint CDT: 9721 vertices, 10623 triangles
 Wedge mesh: 106931 vertices, 106230 wedge cells
 OpenVolumeMesh cells: 106230, faces: 310523, vertices: 106931
-Material default k = 6.500000
-  material[0] default: k = 6.500000, wedge cells = 48090
-  material[1] copper_busbar: k = 385.000000, wedge cells = 4739
-  material[2] graphite_spreader: k = 130.000000, wedge cells = 8389
-  material[3] ceramic_bridge: k = 24.000000, wedge cells = 7894
-  material[4] polymer_slot: k = 0.180000, wedge cells = 7718
-  material[5] steel_frame: k = 45.000000, wedge cells = 2214
-  material[6] aluminum_fin: k = 205.000000, wedge cells = 4820
-  material[7] titanium_mount: k = 22.000000, wedge cells = 7251
-  material[8] foam_relief: k = 0.045000, wedge cells = 1920
-  material[9] silicon_die: k = 149.000000, wedge cells = 4255
-  material[10] air_gap: k = 0.026000, wedge cells = 1628
-  material[11] silver_via_field: k = 429.000000, wedge cells = 3660
-  material[12] thermal_grease_layer: k = 8.500000, wedge cells = 3652
+Material default k = 6.5
+  material[0] default: k = 6.5, wedge cells = 48090
+  material[1] copper_busbar: k = 385, wedge cells = 4739
+  material[2] graphite_spreader: k = 130, wedge cells = 8389
+  material[3] ceramic_bridge: k = 24, wedge cells = 7894
+  material[4] polymer_slot: k = 0.18, wedge cells = 7718
+  material[5] steel_frame: k = 45, wedge cells = 2214
+  material[6] aluminum_fin: k = 205, wedge cells = 4820
+  material[7] titanium_mount: k = 22, wedge cells = 7251
+  material[8] foam_relief: k = 0.045, wedge cells = 1920
+  material[9] silicon_die: k = 149, wedge cells = 4255
+  material[10] air_gap: k = 0.026, wedge cells = 1628
+  material[11] silver_via_field: k = 429, wedge cells = 3660
+  material[12] thermal_grease_layer: k = 8.5, wedge cells = 3652
 METIS nodal partition into 4 parts
-TIMING reorder_by_partition seconds min/avg/max = 0.003716 / 0.006110 / 0.007827
-TIMING assemble_local_system seconds min/avg/max = 0.139071 / 0.162098 / 0.179491
-MATRIX local_rows min/avg/max = 26302 / 26732.750000 / 27172, local_nnz min/avg/max = 199202 / 248068.500000 / 289298
-HYPRE PCG iterations: 539, residual: 0.000000
-TIMING hypre_solve seconds min/avg/max = 3.384771 / 3.400459 / 3.411262
-TIMING solution_gather seconds min/avg/max = 0.006609 / 0.006768 / 0.006899
-TIMING l2_error seconds min/avg/max = 0.010682 / 0.010722 / 0.010737
-MEMORY rss_mb avg/max = 171.513672 / 218.136719, peak_rss_mb avg/max = 171.513672 / 218.136719
+TIMING reorder_by_partition seconds min/avg/max = 0.00384535 / 0.00697344 / 0.00872339
+TIMING assemble_local_system seconds min/avg/max = 0.139697 / 0.163971 / 0.183385
+MATRIX local_rows min/avg/max = 26302 / 26732.8 / 27172, local_nnz min/avg/max = 199202 / 248068 / 289298
+HYPRE PCG iterations: 539, residual: 9.71487e-11
+TIMING hypre_solve seconds min/avg/max = 3.38437 / 3.40152 / 3.41238
+TIMING solution_gather seconds min/avg/max = 0.00629254 / 0.00636801 / 0.00645245
+TIMING l2_error seconds min/avg/max = 0.0104384 / 0.0104774 / 0.0104953
+MEMORY rss_mb avg/max = 171.537 / 218.25, peak_rss_mb avg/max = 171.537 / 218.25
 HYPRE solve complete. Relative L2 error vs manufactured solution: 0.355407
-BENCHMARK processes=4 footprint_vertices=9721 footprint_triangles=10623 mesh_vertices=106931 wedge_cells=106230 matrix_rows=106931 matrix_nnz=992274 total_seconds=4.740419 peak_rss_mb_max=218.136719 l2_error=0.355407
+BENCHMARK processes=4 footprint_vertices=9721 footprint_triangles=10623 mesh_vertices=106931 wedge_cells=106230 matrix_rows=106931 matrix_nnz=992274 total_seconds=4.74083 peak_rss_mb_max=218.25 l2_error=0.355407
 	Command being timed: "mpirun --allow-run-as-root -np 4 ./build/heat_conduction_mpi examples/large_composite_heat_multimaterial.plc i 110 90 10"
-	User time (seconds): 19.09
-	System time (seconds): 0.62
+	User time (seconds): 19.03
+	System time (seconds): 0.69
 	Percent of CPU this job got: 386%
 	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:05.10
 	Average shared text size (kbytes): 0
 	Average unshared data size (kbytes): 0
 	Average stack size (kbytes): 0
 	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 222924
+	Maximum resident set size (kbytes): 223152
 	Average resident set size (kbytes): 0
 	Major (requiring I/O) page faults: 3
-	Minor (reclaiming a frame) page faults: 163657
-	Voluntary context switches: 5386
-	Involuntary context switches: 756765
+	Minor (reclaiming a frame) page faults: 163680
+	Voluntary context switches: 5389
+	Involuntary context switches: 689292
 	Swaps: 0
 	File system inputs: 0
 	File system outputs: 136

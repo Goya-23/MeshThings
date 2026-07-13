@@ -33,9 +33,9 @@
 
 | MPI processes | Total seconds | Peak RSS max (MB) | Assembly seconds max | HYPRE solve seconds max | Raw log |
 | ---: | ---: | ---: | ---: | ---: | --- |
-| 1 | 4.960215 | 277.566406 | 0.506088 | 3.380463 | `logs/benchmarks/large_composite_np1_2026-07-13.log` |
-| 2 | 4.803107 | 221.656250 | 0.276566 | 3.382213 | `logs/benchmarks/large_composite_np2_2026-07-13.log` |
-| 4 | 4.740419 | 218.136719 | 0.179491 | 3.411262 | `logs/benchmarks/large_composite_np4_2026-07-13.log` |
+| 1 | 4.95674 | 277.492 | 0.511282 | 3.35609 | `logs/benchmarks/large_composite_np1_2026-07-13.log` |
+| 2 | 4.80963 | 222.293 | 0.277842 | 3.38183 | `logs/benchmarks/large_composite_np2_2026-07-13.log` |
+| 4 | 4.74083 | 218.25 | 0.183385 | 3.41238 | `logs/benchmarks/large_composite_np4_2026-07-13.log` |
 
 Notes:
 

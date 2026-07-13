@@ -16,8 +16,8 @@ Mesh:
 
 | MPI processes | Total seconds | Peak RSS max (MB) | `/usr/bin/time` elapsed | `/usr/bin/time` max RSS (KB) | Raw log |
 | ---: | ---: | ---: | ---: | ---: | --- |
-| 1 | 4.960215 | 277.566406 | 0:05.31 | 284184 | `large_composite_np1_2026-07-13.log` |
-| 2 | 4.803107 | 221.656250 | 0:05.14 | 226672 | `large_composite_np2_2026-07-13.log` |
-| 4 | 4.740419 | 218.136719 | 0:05.10 | 222924 | `large_composite_np4_2026-07-13.log` |
+| 1 | 4.95674 | 277.492 | 0:05.30 | 284048 | `large_composite_np1_2026-07-13.log` |
+| 2 | 4.80963 | 222.293 | 0:05.15 | 227560 | `large_composite_np2_2026-07-13.log` |
+| 4 | 4.74083 | 218.25 | 0:05.10 | 223152 | `large_composite_np4_2026-07-13.log` |
 
-The assembly stage scales down from 0.506088 seconds at 1 rank to 0.179491 seconds at 4 ranks. End-to-end runtime changes less because the current solve path gathers the matrix to rank 0 before invoking HYPRE with `MPI_COMM_SELF`.
+The assembly stage scales down from 0.511282 seconds at 1 rank to 0.183385 seconds at 4 ranks. End-to-end runtime changes less because the current solve path gathers the matrix to rank 0 before invoking HYPRE with `MPI_COMM_SELF`.
