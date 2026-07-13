@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
         HYPRE_Init();
         MPI_Barrier(MPI_COMM_WORLD);
 
-        std::cout << std::fixed << std::setprecision(6);
+        std::cout << std::setprecision(6);
         const auto total_start = Clock::now();
         auto stage_start = total_start;
 

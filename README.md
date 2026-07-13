@@ -62,7 +62,7 @@ mpirun -np 2 ./build/heat_conduction_mpi examples/complex_heat_multimaterial.plc
 
 # Large benchmark case, designed for more than 100,000 wedge cells
 mpirun --allow-run-as-root -np 4 ./build/heat_conduction_mpi \
-  examples/large_composite_heat_multimaterial.plc i 110 90 8
+  examples/large_composite_heat_multimaterial.plc i 110 90 10
 ```
 
 ### Arguments
