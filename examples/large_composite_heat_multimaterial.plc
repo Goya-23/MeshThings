@@ -1,0 +1,49 @@
+# Large composite heat-conduction benchmark case.
+# Format:
+#   boundary vertex count
+#   x y
+#   ...
+#   hole seed count
+#   x y
+#   ...
+#   extrusion height
+#   default conductivity
+#   material region count
+#   name conductivity xmin xmax ymin ymax zmin zmax
+20
+-0.40 0.20
+0.30 -0.25
+1.30 -0.45
+2.60 -0.25
+3.50 0.10
+4.20 0.85
+4.85 0.80
+5.35 1.55
+4.90 2.25
+5.10 3.05
+4.35 3.75
+3.45 3.55
+2.95 4.25
+1.95 4.05
+1.35 3.45
+0.55 3.80
+-0.15 3.20
+0.05 2.45
+-0.65 1.85
+-0.25 1.10
+0
+2.40
+6.5
+12
+copper_busbar 385.0 0.35 1.35 0.15 1.25 0.00 2.40
+graphite_spreader 130.0 1.15 3.10 0.35 1.60 0.35 1.95
+ceramic_bridge 24.0 2.75 4.45 0.70 2.05 0.00 2.40
+polymer_slot 0.18 -0.25 0.80 1.15 2.75 0.00 2.40
+steel_frame 45.0 3.55 5.15 1.60 3.35 0.00 1.15
+aluminum_fin 205.0 0.80 2.10 2.55 4.05 1.10 2.40
+titanium_mount 22.0 2.05 3.35 2.25 3.85 0.00 1.30
+foam_relief 0.045 3.65 4.95 2.35 3.65 1.20 2.40
+silicon_die 149.0 1.55 2.65 1.25 2.30 0.60 1.80
+air_gap 0.026 0.05 0.95 2.55 3.55 0.35 1.25
+silver_via_field 429.0 2.35 3.75 0.15 1.15 1.40 2.40
+thermal_grease_layer 8.5 0.90 4.35 1.05 2.85 0.95 1.12
