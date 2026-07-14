@@ -15,6 +15,7 @@ struct LocalLinearSystem {
     int global_size = 0;
     int row_start = 0;
     int row_end = 0;
+    int assembled_wedges = 0;
     std::vector<int> owned_vertices;
     std::vector<int> local_to_global;
     std::map<int, int> global_to_local;
