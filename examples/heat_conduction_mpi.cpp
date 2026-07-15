@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <mpi.h>
+#include <sys/resource.h>
 
 #include <HYPRE.h>
 #include <HYPRE_utilities.h>
@@ -21,6 +22,48 @@
 #include "wedgeMesh.h"
 
 namespace {
+
+struct BalanceStats {
+    long min = 0;
+    long max = 0;
+    long sum = 0;
+};
+
+double maxElapsedSince(MPI_Comm comm, double start_time) {
+    const double local_elapsed = MPI_Wtime() - start_time;
+    double max_elapsed = 0.0;
+    MPI_Reduce(&local_elapsed, &max_elapsed, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+    return max_elapsed;
+}
+
+BalanceStats reduceBalanceStats(MPI_Comm comm, long local_value) {
+    BalanceStats stats;
+    MPI_Reduce(&local_value, &stats.min, 1, MPI_LONG, MPI_MIN, 0, comm);
+    MPI_Reduce(&local_value, &stats.max, 1, MPI_LONG, MPI_MAX, 0, comm);
+    MPI_Reduce(&local_value, &stats.sum, 1, MPI_LONG, MPI_SUM, 0, comm);
+    return stats;
+}
+
+long peakResidentSetKb() {
+    rusage usage {};
+    if (getrusage(RUSAGE_SELF, &usage) != 0) {
+        return 0;
+    }
+    return usage.ru_maxrss;
+}
+
+void printTiming(int rank, const std::string& label, double seconds) {
+    if (rank == 0) {
+        std::cout << "Timing " << label << ": " << seconds << " s\n";
+    }
+}
+
+void printBalanceStats(int rank, int size, const std::string& label, const BalanceStats& stats) {
+    if (rank == 0) {
+        const double average = size > 0 ? static_cast<double>(stats.sum) / static_cast<double>(size) : 0.0;
+        std::cout << label << " min/avg/max: " << stats.min << " / " << average << " / " << stats.max << "\n";
+    }
+}
 
 double computeL2Error(
     const WedgeMesh3D& mesh,
@@ -124,6 +167,9 @@ int main(int argc, char** argv) {
     try {
         HYPRE_Init();
 
+        const double total_start = MPI_Wtime();
+        double stage_start = MPI_Wtime();
+
         PLCParser parser;
         std::shared_ptr<PLC2D> plc = plc_path ? parser.parse(plc_path) : parser.makeUnitSquare();
         if (argc < 7) {
@@ -147,6 +193,10 @@ int main(int argc, char** argv) {
 
         triangulator->triangulate(plc);
         const Triangulation2D& footprint = triangulator->result();
+        const double input_cdt_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "input_cdt", input_cdt_s);
+
+        stage_start = MPI_Wtime();
         const std::vector<MaterialRegion2D> material_regions =
             conductivity_overridden ? std::vector<MaterialRegion2D>{} : plc->getMaterialRegions();
         WedgeMesh3D wedge_mesh = WedgeExtruder::extrude(footprint, nz, height, conductivity, material_regions);
@@ -159,7 +209,10 @@ int main(int argc, char** argv) {
             wedge_mesh.wedge_material_id,
             wedge_mesh.material_names,
             wedge_mesh.boundary_vertices);
+        const double extrude_ovm_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "extrude_ovm", extrude_ovm_s);
 
+        stage_start = MPI_Wtime();
         MeshPartition partition;
         if (rank == 0) {
             partition = MeshPartitioner::partitionNodal(mesh_from_ovm, size);
@@ -175,6 +228,8 @@ int main(int argc, char** argv) {
         }
         MPI_Bcast(partition.element_part.data(), wedge_count, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Bcast(partition.vertex_part.data(), vertex_count, MPI_INT, 0, MPI_COMM_WORLD);
+        const double partition_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "partition_broadcast", partition_s);
 
         if (rank == 0) {
             std::cout << "Footprint CDT: " << footprint.vertexCount() << " vertices, "
@@ -206,15 +261,65 @@ int main(int argc, char** argv) {
             std::cout << "METIS nodal partition into " << partition.num_parts << " parts\n";
         }
 
+        stage_start = MPI_Wtime();
         mesh_from_ovm = MeshPartitioner::reorderByPartition(mesh_from_ovm, partition);
+        const double reorder_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "reorder_by_partition", reorder_s);
 
+        stage_start = MPI_Wtime();
         LocalLinearSystem system = HeatFEMAssembler::assemble(MPI_COMM_WORLD, mesh_from_ovm, partition);
+        const double assembly_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "assembly", assembly_s);
+        const BalanceStats row_stats =
+            reduceBalanceStats(MPI_COMM_WORLD, static_cast<long>(system.owned_vertices.size()));
+        const BalanceStats nnz_stats =
+            reduceBalanceStats(MPI_COMM_WORLD, static_cast<long>(system.col_indices.size()));
+        const BalanceStats wedge_stats =
+            reduceBalanceStats(MPI_COMM_WORLD, static_cast<long>(system.assembled_wedges));
+        printBalanceStats(rank, size, "Owned rows", row_stats);
+        printBalanceStats(rank, size, "Local matrix nnz", nnz_stats);
+        printBalanceStats(rank, size, "Incident wedges assembled", wedge_stats);
+
+        stage_start = MPI_Wtime();
         std::vector<double> local_solution = HypreSolver::solve(MPI_COMM_WORLD, system);
+        const double solve_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "solve", solve_s);
+
+        stage_start = MPI_Wtime();
         std::vector<double> gathered_solution = HypreSolver::gatherSolution(MPI_COMM_WORLD, system, local_solution);
 
         const double l2_error = computeL2Error(mesh_from_ovm, gathered_solution, rank);
+        const double gather_error_s = maxElapsedSince(MPI_COMM_WORLD, stage_start);
+        printTiming(rank, "gather_l2_error", gather_error_s);
+        const double total_s = maxElapsedSince(MPI_COMM_WORLD, total_start);
+        const BalanceStats rss_stats = reduceBalanceStats(MPI_COMM_WORLD, peakResidentSetKb());
         if (rank == 0) {
             std::cout << "HYPRE solve complete. Relative L2 error vs manufactured solution: " << l2_error << "\n";
+            printBalanceStats(rank, size, "Peak RSS KB", rss_stats);
+            std::cout << "BENCHMARK"
+                      << " processes=" << size
+                      << " nx=" << nx
+                      << " ny=" << ny
+                      << " nz=" << nz
+                      << " vertices=" << mesh_from_ovm.vertexCount()
+                      << " wedges=" << mesh_from_ovm.wedgeCount()
+                      << " input_cdt_s=" << input_cdt_s
+                      << " extrude_ovm_s=" << extrude_ovm_s
+                      << " partition_s=" << partition_s
+                      << " reorder_s=" << reorder_s
+                      << " assembly_s=" << assembly_s
+                      << " solve_s=" << solve_s
+                      << " gather_l2_error_s=" << gather_error_s
+                      << " total_s=" << total_s
+                      << " rows_min=" << row_stats.min
+                      << " rows_max=" << row_stats.max
+                      << " nnz_min=" << nnz_stats.min
+                      << " nnz_max=" << nnz_stats.max
+                      << " incident_wedges_min=" << wedge_stats.min
+                      << " incident_wedges_max=" << wedge_stats.max
+                      << " rss_peak_kb_max=" << rss_stats.max
+                      << " l2_error=" << l2_error
+                      << "\n";
         }
 
         HYPRE_Finalize();

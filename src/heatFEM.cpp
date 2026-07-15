@@ -186,7 +186,10 @@ LocalLinearSystem HeatFEMAssembler::assemble(
     }
 
     std::set<int> touched_vertices(system.owned_vertices.begin(), system.owned_vertices.end());
-    for (const auto& wedge : mesh.wedges) {
+    std::vector<std::size_t> incident_wedges;
+    incident_wedges.reserve(mesh.wedges.size() / static_cast<std::size_t>(size) + 1);
+    for (std::size_t wedge_id = 0; wedge_id < mesh.wedges.size(); ++wedge_id) {
+        const auto& wedge = mesh.wedges[wedge_id];
         bool touches_owned = false;
         for (int corner = 0; corner < 6; ++corner) {
             if (partition.vertex_part[wedge[corner]] == rank) {
@@ -197,20 +200,22 @@ LocalLinearSystem HeatFEMAssembler::assemble(
         if (!touches_owned) {
             continue;
         }
+        incident_wedges.push_back(wedge_id);
         for (int corner = 0; corner < 6; ++corner) {
             touched_vertices.insert(wedge[corner]);
         }
     }
+    system.assembled_wedges = static_cast<int>(incident_wedges.size());
 
     system.local_to_global.assign(touched_vertices.begin(), touched_vertices.end());
     for (std::size_t local = 0; local < system.local_to_global.size(); ++local) {
         system.global_to_local[system.local_to_global[local]] = static_cast<int>(local);
     }
 
-    std::map<int, std::map<int, double>> global_matrix;
-    std::map<int, double> global_rhs;
-    for (std::size_t wedge_id = 0; wedge_id < mesh.wedges.size(); ++wedge_id) {
-        addWedgeContribution(mesh, wedge_id, mesh.wedges[wedge_id], global_matrix, global_rhs);
+    std::map<int, std::map<int, double>> local_matrix;
+    std::map<int, double> local_rhs;
+    for (std::size_t wedge_id : incident_wedges) {
+        addWedgeContribution(mesh, wedge_id, mesh.wedges[wedge_id], local_matrix, local_rhs);
     }
 
     system.is_dirichlet.assign(system.local_to_global.size(), 0);
@@ -241,7 +246,7 @@ LocalLinearSystem HeatFEMAssembler::assemble(
             continue;
         }
 
-        for (const auto& column_entry : global_matrix[global_row]) {
+        for (const auto& column_entry : local_matrix[global_row]) {
             const int global_col = column_entry.first;
             const double value = column_entry.second;
             const Point3D& col_point = mesh.vertices[global_col];
@@ -251,7 +256,7 @@ LocalLinearSystem HeatFEMAssembler::assemble(
                 rows[local_row].push_back({global_col, value});
             }
         }
-        system.rhs[local_row] += global_rhs[global_row];
+        system.rhs[local_row] += local_rhs[global_row];
     }
 
     for (int local_row = 0; local_row < local_rows; ++local_row) {
