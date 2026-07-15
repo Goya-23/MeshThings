@@ -8,7 +8,7 @@ This case is intended as a larger performance and memory benchmark for the wedge
 - Extrusion height `2.40` with z-dependent material boxes.
 - Default matrix conductivity `k = 7.5`.
 - 12 material regions with overlapping boxes; later records override earlier records by wedge centroid.
-- Benchmark resolution: `nx = 110`, `ny = 90`, `nz = 10`, which is expected to produce more than 100,000 wedge elements.
+- Benchmark resolution: `nx = 110`, `ny = 90`, `nz = 10`, which produced 110,650 wedge elements in the 2026-07-15 run.
 
 ## Material regions
 
@@ -43,5 +43,17 @@ Use 1, 2, and 4 MPI processes with the same mesh arguments to compare runtime an
 Run on 2026-07-15:
 
 ```text
-Results will be populated after the benchmark suite completes.
+Footprint CDT: 9723 vertices, 11065 triangles
+Wedge mesh: 106953 vertices, 110650 wedge cells
+OpenVolumeMesh cells: 110650, faces: 322065, vertices: 106953
+HYPRE PCG iterations: 427-428
+Relative L2 error vs manufactured solution: 0.385714
 ```
+
+| MPI processes | Total runtime (s) | Assembly runtime (s) | Solve runtime (s) | Max peak RSS (KB) | Incident wedges per rank min/max |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 4.46046 | 0.524808 | 2.81589 | 291704 | 110650 / 110650 |
+| 2 | 4.29625 | 0.276725 | 2.81518 | 232700 | 54290 / 56380 |
+| 4 | 4.44741 | 0.213902 | 2.93304 | 229748 | 19130 / 35051 |
+
+The per-rank assembly work and peak RSS drop as the process count increases. Total runtime remains dominated by the current gather-to-rank-0 HYPRE solve path plus replicated mesh construction on every rank, so the 4-process run does not improve end-to-end time despite lower local assembly cost.
